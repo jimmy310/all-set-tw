@@ -6,6 +6,8 @@ import { prepareObankTimeDepositWrite } from "../../../src/features/sync/obank-t
 import {
   bankAccountRecord as mapAccount,
   bankBalanceSnapshotRecord as mapBalance,
+  investmentPositionRecord,
+  investmentTransactionRecord,
 } from "../../../src/features/sync/record-mapper";
 import {
   listBankAccounts,
@@ -245,6 +247,113 @@ function creditCardBillRecord(
 }
 
 describe("staged sync persistence", () => {
+  it("round trips option metadata through mapping, staging, and promotion", async () => {
+    const db = createDb();
+    db.database
+      .prepare(
+        `INSERT INTO investment_accounts
+         (id, connector_id, source_id, provider, account_type, display_name, currency, created_at, updated_at)
+         VALUES ('broker-account-1', 'tdcc', 'broker-account-1', 'Synthetic Broker', 'brokerage', 'Options', 'USD', 'now', 'now')`,
+      )
+      .run();
+    const now = "2026-09-23T00:00:00.000Z";
+    const position = investmentPositionRecord(
+      "tdcc",
+      {
+        sourceId: "option-position-1",
+        investmentAccountId: "broker-account-1",
+        assetType: "option",
+        symbol: "TSM281215C00280000",
+        name: "TSM Dec 15 2028 280 Call",
+        quantity: -2,
+        marketValue: -2_500,
+        currency: "USD",
+        asOfDate: "2026-09-23",
+        underlyingSymbol: "TSM",
+        expirationDate: "2028-12-15",
+        strikePrice: 280,
+        optionRight: "call",
+        contractMultiplier: 100,
+        contractSymbol: "TSM281215C00280000",
+        optionMarkPrice: 12.5,
+        economicSecurityId: "economy:tsm-option:2028-12-15:280c",
+        observationCoverage: "subset",
+      },
+      now,
+    );
+    const transaction = investmentTransactionRecord(
+      "tdcc",
+      {
+        accountId: "broker-account-1",
+        sourceId: "option-trade-1",
+        assetType: "option",
+        symbol: "TSM281215C00280000",
+        name: "TSM Dec 15 2028 280 Call",
+        currency: "USD",
+        underlyingSymbol: "TSM",
+        expirationDate: "2028-12-15",
+        strikePrice: 280,
+        optionRight: "call",
+        contractSymbol: "TSM281215C00280000",
+        externalContractId: "broker-contract-1",
+      },
+      now,
+    );
+
+    await persistStagedSyncWrite(db as unknown as D1Database, {
+      records: [position, transaction],
+    });
+
+    expect(
+      db.database
+        .prepare(
+          `SELECT investment_account_id AS investmentAccountId,
+                  underlying_symbol AS underlyingSymbol,
+                  expiration_date AS expirationDate,
+                  strike_price AS strikePrice,
+                  option_right AS optionRight,
+                  contract_multiplier AS contractMultiplier,
+                  contract_symbol AS contractSymbol,
+                  option_mark_price AS optionMarkPrice,
+                  economic_security_id AS economicSecurityId,
+                  observation_coverage AS observationCoverage
+           FROM investment_positions WHERE source_id = 'option-position-1'`,
+        )
+        .get(),
+    ).toEqual({
+      investmentAccountId: "broker-account-1",
+      underlyingSymbol: "TSM",
+      expirationDate: "2028-12-15",
+      strikePrice: 280,
+      optionRight: "call",
+      contractMultiplier: 100,
+      contractSymbol: "TSM281215C00280000",
+      optionMarkPrice: 12.5,
+      economicSecurityId: "economy:tsm-option:2028-12-15:280c",
+      observationCoverage: "subset",
+    });
+    expect(
+      db.database
+        .prepare(
+          `SELECT underlying_symbol AS underlyingSymbol,
+                  expiration_date AS expirationDate,
+                  strike_price AS strikePrice,
+                  option_right AS optionRight,
+                  contract_symbol AS contractSymbol,
+                  external_contract_id AS externalContractId
+           FROM investment_transactions WHERE source_id = 'option-trade-1'`,
+        )
+        .get(),
+    ).toEqual({
+      underlyingSymbol: "TSM",
+      expirationDate: "2028-12-15",
+      strikePrice: 280,
+      optionRight: "call",
+      contractSymbol: "TSM281215C00280000",
+      externalContractId: "broker-contract-1",
+    });
+  });
+
   it("seeds a disabled CTBC all-scope sync job", () => {
     const db = createDb();
 

@@ -469,6 +469,9 @@ apps/worker/src/features/sync/
 - `service.ts`：同步 use case、設定解密、connector 呼叫、lock 與流程協調。
 - `record-mapper.ts`：將 connector result 轉換成 database write record。
 - `persistence.ts`：透過 staging table 與 D1 batch 將同步資料寫入正式資料表。
+
+投資部位 mapper 與 staged promotion 會保留投資帳戶、選擇權合約欄位、`economicSecurityId` 及觀測涵蓋範圍；投資交易則保留選擇權合約識別欄位。一般 connector 不必提供這些選擇性欄位，既有 TDCC 結果可維持原格式。
+
 - `repository.ts`：同步流程使用的 query 與 prepared statement。
 - `schedule-route.ts`：排程設定 API。
 - `schedule-service.ts`：排程設定 use case。

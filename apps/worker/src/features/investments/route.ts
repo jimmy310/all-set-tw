@@ -53,7 +53,7 @@ const accountSchema = z.object({
   currency: z.string().regex(/^[A-Z]{3}$/),
   market: z.string().trim().max(8).nullable().optional(),
 });
-const manualPositionSchema = z
+export const manualPositionSchema = z
   .object({
     accountId: z.string().min(1),
     assetType: z.enum([
@@ -71,6 +71,7 @@ const manualPositionSchema = z
     name: z.string().trim().min(1).max(120),
     quantity: z.number().finite().nullable().optional(),
     marketValue: z.number().int().nullable().optional(),
+    cashBalance: z.number().finite().nonnegative().nullable().optional(),
     currency: z.string().regex(/^[A-Z]{3}$/),
     averageCost: z.number().finite().nonnegative().nullable().optional(),
     costBasis: z.number().int().nonnegative().nullable().optional(),
@@ -82,7 +83,7 @@ const manualPositionSchema = z
     expirationDate: dateSchema.nullable().optional(),
     strikePrice: z.number().finite().nonnegative().nullable().optional(),
     optionRight: z.enum(["call", "put"]).nullable().optional(),
-    contractMultiplier: z.number().finite().positive().default(1),
+    contractMultiplier: z.number().finite().positive().default(100),
     contractSymbol: z.string().trim().max(120).nullable().optional(),
     optionMarkPrice: z.number().finite().nonnegative().nullable().optional(),
     economicSecurityId: z.string().trim().min(1).max(160).nullable().optional(),
@@ -90,6 +91,7 @@ const manualPositionSchema = z
   })
   .superRefine((body, ctx) => {
     if (
+      body.assetType !== "cash" &&
       body.marketValue == null &&
       body.quantity == null &&
       body.optionMarkPrice == null
@@ -148,11 +150,16 @@ function registerInvestmentRoutes(api: Hono<AppBindings>) {
       validationHook("INVALID_REQUEST", "Investment account is invalid."),
     ),
     async (c) => {
-      await editManualInvestmentAccount(
+      const updated = await editManualInvestmentAccount(
         c.env.DB,
         c.req.param("id"),
         c.req.valid("json"),
       );
+      if (!updated)
+        return c.json(
+          { success: false, error: { code: "ACCOUNT_NOT_FOUND" } },
+          404,
+        );
       return c.json({ success: true });
     },
   );
@@ -183,10 +190,18 @@ function registerInvestmentRoutes(api: Hono<AppBindings>) {
       manualPositionSchema,
       validationHook("INVALID_REQUEST", "Investment position is invalid."),
     ),
-    async (c) =>
-      c.json({
-        id: await addManualInvestmentPosition(c.env.DB, c.req.valid("json")),
-      }),
+    async (c) => {
+      const id = await addManualInvestmentPosition(
+        c.env.DB,
+        c.req.valid("json"),
+      );
+      if (!id)
+        return c.json(
+          { success: false, error: { code: "MANUAL_ACCOUNT_NOT_FOUND" } },
+          404,
+        );
+      return c.json({ id });
+    },
   );
   api.put(
     "/investments/manual/:id",
@@ -196,11 +211,19 @@ function registerInvestmentRoutes(api: Hono<AppBindings>) {
       validationHook("INVALID_REQUEST", "Investment position is invalid."),
     ),
     async (c) => {
-      await editManualInvestmentPosition(
+      const updated = await editManualInvestmentPosition(
         c.env.DB,
         c.req.param("id"),
         c.req.valid("json"),
       );
+      if (!updated)
+        return c.json(
+          {
+            success: false,
+            error: { code: "MANUAL_POSITION_OR_ACCOUNT_NOT_FOUND" },
+          },
+          404,
+        );
       return c.json({ success: true });
     },
   );
@@ -234,11 +257,16 @@ function registerInvestmentRoutes(api: Hono<AppBindings>) {
       validationHook("INVALID_REQUEST", "Position reconciliation is invalid."),
     ),
     async (c) => {
-      await linkPositionReconciliation(
+      const updated = await linkPositionReconciliation(
         c.env.DB,
         c.req.param("id"),
         c.req.valid("json"),
       );
+      if (!updated)
+        return c.json(
+          { success: false, error: { code: "MANUAL_POSITION_NOT_FOUND" } },
+          404,
+        );
       return c.json({ success: true });
     },
   );

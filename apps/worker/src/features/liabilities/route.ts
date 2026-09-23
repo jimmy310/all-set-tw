@@ -82,7 +82,18 @@ function registerLiabilityRoutes(api: Hono<AppBindings>) {
       validationHook("INVALID_REQUEST", "Collateral relationship is invalid."),
     ),
     async (c) => {
-      await addCollateralRelationship(c.env.DB, c.req.valid("json"));
+      const created = await addCollateralRelationship(
+        c.env.DB,
+        c.req.valid("json"),
+      );
+      if (!created)
+        return c.json(
+          {
+            success: false,
+            error: { code: "COLLATERAL_TARGET_NOT_FOUND" },
+          },
+          404,
+        );
       return c.json({ success: true });
     },
   );

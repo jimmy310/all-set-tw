@@ -5,6 +5,7 @@ import {
   updateLiability,
   listCollateralRelationships,
   createCollateralRelationship,
+  collateralTargetExists,
   deleteCollateralRelationship,
 } from "./repository";
 
@@ -91,7 +92,7 @@ export function getCollateralRelationships(db: D1Database) {
   return listCollateralRelationships(db);
 }
 
-export function addCollateralRelationship(
+export async function addCollateralRelationship(
   db: D1Database,
   input: {
     liabilityAccountId: string;
@@ -101,13 +102,16 @@ export function addCollateralRelationship(
     currency: string;
   },
 ) {
+  if (!(await collateralTargetExists(db, input.assetType, input.assetId)))
+    return false;
   const now = new Date().toISOString();
-  return createCollateralRelationship(db, {
+  await createCollateralRelationship(db, {
     ...input,
     collateralValue: input.collateralValue ?? null,
     id: `collateral:${crypto.randomUUID()}`,
     now,
   });
+  return true;
 }
 
 export function removeCollateralRelationship(db: D1Database, id: string) {

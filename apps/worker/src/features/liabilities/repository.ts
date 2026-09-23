@@ -46,6 +46,25 @@ export async function createCollateralRelationship(
     });
 }
 
+export async function collateralTargetExists(
+  db: D1Database,
+  assetType: string,
+  assetId: string,
+) {
+  const tableByType: Record<string, string> = {
+    investment_position: "investment_positions",
+    manual_asset: "manual_assets",
+    bank_account: "bank_accounts",
+  };
+  const table = tableByType[assetType];
+  if (!table) return false;
+  const row = await db
+    .prepare(`SELECT id FROM ${table} WHERE id = ? LIMIT 1`)
+    .bind(assetId)
+    .first<{ id: string }>();
+  return row !== null;
+}
+
 export async function deleteCollateralRelationship(db: D1Database, id: string) {
   await createDrizzle(db)
     .delete(collateralRelationships)

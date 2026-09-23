@@ -96,18 +96,30 @@ export async function listLatestInvestmentPositions(
     .from(investmentPositions)
     .where(
       and(
-        // Manual accounts are independent economic sources. Legacy connector
-        // snapshots (including TDCC) retain connector-level snapshot semantics.
-        eq(
-          investmentPositions.asOfDate,
-          sql`(
-            SELECT MAX(p2.as_of_date)
-            FROM investment_positions p2
-            WHERE COALESCE(p2.investment_account_id, p2.connector_id) =
-                  COALESCE(${investmentPositions.investmentAccountId}, ${investmentPositions.connectorId})
-              AND p2.asset_type = ${investmentPositions.assetType}
-          )`,
-        ),
+        // Connector snapshots (notably TDCC) are complete connector-level
+        // observations. Manual rows are independent positions: select their
+        // latest version by stable source identity, never by account/type.
+        sql`(
+          (${investmentPositions.connectorId} = 'manual' AND
+            ${investmentPositions.asOfDate} = (
+              SELECT MAX(p2.as_of_date)
+              FROM investment_positions p2
+              WHERE p2.connector_id = ${investmentPositions.connectorId}
+                AND COALESCE(p2.investment_account_id, p2.connector_id) =
+                    COALESCE(${investmentPositions.investmentAccountId}, ${investmentPositions.connectorId})
+                AND p2.source_id = ${investmentPositions.sourceId}
+            ))
+          OR
+          (${investmentPositions.connectorId} <> 'manual' AND
+            ${investmentPositions.asOfDate} = (
+              SELECT MAX(p2.as_of_date)
+              FROM investment_positions p2
+              WHERE p2.connector_id = ${investmentPositions.connectorId}
+                AND COALESCE(p2.investment_account_id, p2.connector_id) =
+                    COALESCE(${investmentPositions.investmentAccountId}, ${investmentPositions.connectorId})
+                AND p2.asset_type = ${investmentPositions.assetType}
+            ))
+        )`,
         cursor
           ? sql`(
               ${investmentPositions.asOfDate} < ${cursor.asOfDate}
@@ -146,6 +158,34 @@ export function listInvestmentAccounts(db: D1Database) {
     .all();
 }
 
+export async function hasManualInvestmentAccount(db: D1Database, id: string) {
+  const row = await createDrizzle(db)
+    .select({ id: investmentAccounts.id })
+    .from(investmentAccounts)
+    .where(
+      and(
+        eq(investmentAccounts.id, id),
+        eq(investmentAccounts.connectorId, "manual"),
+      ),
+    )
+    .get();
+  return row !== undefined;
+}
+
+export async function hasManualInvestmentPosition(db: D1Database, id: string) {
+  const row = await createDrizzle(db)
+    .select({ id: investmentPositions.id })
+    .from(investmentPositions)
+    .where(
+      and(
+        eq(investmentPositions.id, id),
+        eq(investmentPositions.connectorId, "manual"),
+      ),
+    )
+    .get();
+  return row !== undefined;
+}
+
 export async function updateManualInvestmentAccount(
   db: D1Database,
   id: string,
@@ -159,7 +199,7 @@ export async function updateManualInvestmentAccount(
   },
   now: string,
 ) {
-  return createDrizzle(db)
+  const result = await createDrizzle(db)
     .update(investmentAccounts)
     .set({ ...fields, updatedAt: now })
     .where(
@@ -167,7 +207,9 @@ export async function updateManualInvestmentAccount(
         eq(investmentAccounts.id, id),
         eq(investmentAccounts.connectorId, "manual"),
       ),
-    );
+    )
+    .run();
+  return result.meta.changes > 0;
 }
 
 export async function deleteManualInvestmentAccount(
@@ -181,15 +223,16 @@ export async function deleteManualInvestmentAccount(
     .bind(id)
     .first<{ count: number }>();
   if ((count?.count ?? 0) > 0) return false;
-  await createDrizzle(db)
+  const result = await createDrizzle(db)
     .delete(investmentAccounts)
     .where(
       and(
         eq(investmentAccounts.id, id),
         eq(investmentAccounts.connectorId, "manual"),
       ),
-    );
-  return true;
+    )
+    .run();
+  return result.meta.changes > 0;
 }
 
 export async function updateManualInvestmentPosition(
@@ -202,6 +245,7 @@ export async function updateManualInvestmentPosition(
     name: string;
     quantity: number | null;
     marketValue: number | null;
+    cashBalance?: number | null;
     currency: string;
     averageCost: number | null;
     costBasis: number | null;
@@ -219,7 +263,7 @@ export async function updateManualInvestmentPosition(
   },
   now: string,
 ) {
-  return createDrizzle(db)
+  const result = await createDrizzle(db)
     .update(investmentPositions)
     .set({
       investmentAccountId: input.accountId,
@@ -228,6 +272,7 @@ export async function updateManualInvestmentPosition(
       name: input.name,
       quantity: input.quantity,
       marketValue: input.marketValue,
+      cashBalance: input.cashBalance ?? null,
       currency: input.currency,
       averageCost: input.averageCost,
       costBasis: input.costBasis,
@@ -250,7 +295,9 @@ export async function updateManualInvestmentPosition(
         eq(investmentPositions.id, id),
         eq(investmentPositions.connectorId, "manual"),
       ),
-    );
+    )
+    .run();
+  return result.meta.changes > 0;
 }
 
 export async function deleteManualInvestmentPosition(
@@ -264,15 +311,16 @@ export async function deleteManualInvestmentPosition(
     .bind(id)
     .first<{ count: number }>();
   if ((links?.count ?? 0) > 0) return false;
-  await createDrizzle(db)
+  const result = await createDrizzle(db)
     .delete(investmentPositions)
     .where(
       and(
         eq(investmentPositions.id, id),
         eq(investmentPositions.connectorId, "manual"),
       ),
-    );
-  return true;
+    )
+    .run();
+  return result.meta.changes > 0;
 }
 
 export async function setPositionReconciliation(
@@ -281,10 +329,17 @@ export async function setPositionReconciliation(
   economicSecurityId: string | null,
   observationCoverage: string,
 ) {
-  return createDrizzle(db)
+  const result = await createDrizzle(db)
     .update(investmentPositions)
     .set({ economicSecurityId, observationCoverage })
-    .where(eq(investmentPositions.id, id));
+    .where(
+      and(
+        eq(investmentPositions.id, id),
+        eq(investmentPositions.connectorId, "manual"),
+      ),
+    )
+    .run();
+  return result.meta.changes > 0;
 }
 
 export async function createManualInvestmentAccount(
@@ -325,6 +380,7 @@ export async function createManualInvestmentPosition(
     name: string;
     quantity: number | null;
     marketValue: number | null;
+    cashBalance?: number | null;
     currency: string;
     averageCost: number | null;
     costBasis: number | null;
@@ -354,6 +410,7 @@ export async function createManualInvestmentPosition(
       name: input.name,
       quantity: input.quantity,
       marketValue: input.marketValue,
+      cashBalance: input.cashBalance ?? null,
       currency: input.currency,
       asOfDate: input.asOfDate,
       averageCost: input.averageCost,

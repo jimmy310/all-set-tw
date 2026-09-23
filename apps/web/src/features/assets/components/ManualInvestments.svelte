@@ -17,7 +17,7 @@
   import Button from "@/shared/ui/Button.svelte";
   import Input from "@/shared/ui/Input.svelte";
   import Select from "@/shared/ui/Select.svelte";
-  import { todayStr } from "@/shared/format/financial";
+  import { formatNumber, todayStr } from "@/shared/format/financial";
 
   let { api }: { api: ApiClient } = $props();
   const qc = useQueryClient();
@@ -35,6 +35,7 @@
   let name = $state("");
   let quantity = $state("");
   let marketValue = $state("");
+  let cashBalance = $state("");
   let currency = $state("USD");
   let custodyStatus = $state("free");
   let asOfDate = $state(todayStr());
@@ -103,21 +104,37 @@
         assetType,
         symbol: symbol.trim() || null,
         name: name.trim(),
-        quantity: quantity === "" ? null : Number(quantity),
-        marketValue: marketValue === "" ? null : Number(marketValue),
+        quantity:
+          assetType === "cash" || quantity === "" ? null : Number(quantity),
+        marketValue:
+          assetType === "cash" || marketValue === ""
+            ? null
+            : Number(marketValue),
+        cashBalance:
+          assetType !== "cash" || cashBalance === ""
+            ? null
+            : Number(cashBalance),
         currency,
         averageCost: averageCost === "" ? null : Number(averageCost),
         costBasis: costBasis === "" ? null : Number(costBasis),
         custodyStatus,
         asOfDate,
-        underlyingSymbol: underlyingSymbol.trim() || null,
-        expirationDate: expirationDate || null,
-        strikePrice: strikePrice === "" ? null : Number(strikePrice),
-        optionRight,
-        contractMultiplier: Number(contractMultiplier || "100"),
-        contractSymbol: contractSymbol.trim() || null,
+        underlyingSymbol:
+          assetType === "option" ? underlyingSymbol.trim() || null : null,
+        expirationDate: assetType === "option" ? expirationDate || null : null,
+        strikePrice:
+          assetType === "option" && strikePrice !== ""
+            ? Number(strikePrice)
+            : null,
+        optionRight: assetType === "option" ? optionRight : null,
+        contractMultiplier:
+          assetType === "option" ? Number(contractMultiplier || "100") : 1,
+        contractSymbol:
+          assetType === "option" ? contractSymbol.trim() || null : null,
         optionMarkPrice:
-          optionMarkPrice === "" ? null : Number(optionMarkPrice),
+          assetType === "option" && optionMarkPrice !== ""
+            ? Number(optionMarkPrice)
+            : null,
       };
       return editingPositionId
         ? api.put<{ success: boolean }>(
@@ -133,6 +150,7 @@
       symbol = "";
       quantity = "";
       marketValue = "";
+      cashBalance = "";
       underlyingSymbol = "";
       expirationDate = "";
       strikePrice = "";
@@ -174,6 +192,8 @@
     quantity = position.quantity == null ? "" : String(position.quantity);
     marketValue =
       position.marketValue == null ? "" : String(position.marketValue);
+    cashBalance =
+      position.cashBalance == null ? "" : String(position.cashBalance);
     currency = position.currency;
     custodyStatus = position.custodyStatus ?? "free";
     asOfDate = position.asOfDate;
@@ -182,7 +202,10 @@
     strikePrice =
       position.strikePrice == null ? "" : String(position.strikePrice);
     optionRight = position.optionRight ?? "call";
-    contractMultiplier = String(position.contractMultiplier ?? 100);
+    contractMultiplier = String(
+      position.contractMultiplier ??
+        (position.assetType === "option" ? 100 : 1),
+    );
     contractSymbol = position.contractSymbol ?? "";
     optionMarkPrice =
       position.optionMarkPrice == null ? "" : String(position.optionMarkPrice);
@@ -194,7 +217,10 @@
     if (
       !accountId ||
       !name.trim() ||
-      (quantity === "" && marketValue === "" && optionMarkPrice === "")
+      (assetType !== "cash" &&
+        quantity === "" &&
+        marketValue === "" &&
+        optionMarkPrice === "")
     ) {
       error = "請選擇投資帳戶，填寫標的名稱，並提供數量或估值。";
       return;
@@ -314,20 +340,31 @@
         </Select>
       </div>
       <div class="grid grid-cols-2 gap-3">
-        <Input
-          aria-label="持有數量"
-          type="number"
-          step="any"
-          placeholder="持有數量"
-          bind:value={quantity}
-        />
-        <Input
-          aria-label="市值"
-          type="number"
-          step="1"
-          placeholder="市值（可留空）"
-          bind:value={marketValue}
-        />
+        {#if assetType === "cash"}
+          <Input
+            aria-label="現金餘額"
+            type="number"
+            min="0"
+            step="any"
+            placeholder="現金餘額（可留空代表未知）"
+            bind:value={cashBalance}
+          />
+        {:else}
+          <Input
+            aria-label="持有數量"
+            type="number"
+            step="any"
+            placeholder="持有數量"
+            bind:value={quantity}
+          />
+          <Input
+            aria-label="市值"
+            type="number"
+            step="1"
+            placeholder="市值（可留空）"
+            bind:value={marketValue}
+          />
+        {/if}
       </div>
       <div class="grid grid-cols-3 gap-3">
         <Input
@@ -448,14 +485,22 @@
   </div>
   <div class="mt-2 divide-y divide-border">
     {#each ($positions.data ?? []).filter((position) => position.connectorId === "manual") as position (position.id)}
+      {@const linkedAccount = ($accounts.data ?? []).find(
+        (account) => account.id === position.investmentAccountId,
+      )}
       <div class="flex items-center justify-between gap-3 py-2 text-sm">
         <span
-          >{position.assetType === "option"
-            ? `${position.underlyingSymbol ?? "?"} ${position.expirationDate ?? "?"} ${position.strikePrice ?? "?"} ${position.optionRight ?? "option"}`
-            : `${position.symbol ?? ""} ${position.name}`} · {position.marketValue ==
-          null
-            ? "估值未知"
-            : `${position.marketValue} ${position.currency}`}</span
+          >{position.assetType === "cash"
+            ? `${position.name} · ${position.cashBalance == null ? "現金餘額未知" : `${formatNumber(position.cashBalance)} ${position.currency}`}`
+            : position.assetType === "option"
+              ? `${position.underlyingSymbol ?? "?"} ${position.expirationDate ?? "?"} ${position.strikePrice ?? "?"} ${position.optionRight ?? "option"}`
+              : `${position.symbol ?? ""} ${position.name}`} · {position.assetType ===
+          "cash"
+            ? "現金"
+            : position.marketValue == null
+              ? "估值未知"
+              : `${position.marketValue} ${position.currency}`} · {linkedAccount?.displayName ??
+            "帳戶未知"}</span
         >
         <span class="flex gap-1"
           ><Button

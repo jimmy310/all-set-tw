@@ -7,7 +7,48 @@ import { is, sql, SQL } from "drizzle-orm";
 import { getTableConfig, SQLiteSyncDialect } from "drizzle-orm/sqlite-core";
 import { describe, expect, it } from "vitest";
 import * as schema from "../src/schema";
-import { readMigrations } from "../testing/d1";
+import { readMigrations, readNamedMigrations } from "../testing/d1";
+
+const namedMigrations = readNamedMigrations();
+
+function applyMigrationsThrough(database: DatabaseSync, migrationName: string) {
+  for (const migration of namedMigrations) {
+    database.exec(migration.sql);
+    if (migration.name === migrationName) return;
+  }
+  throw new Error(`Migration ${migrationName} was not found`);
+}
+
+function applyMigrationsAfter(
+  database: DatabaseSync,
+  migrationName: string,
+  throughName: string,
+) {
+  let foundStart = false;
+  for (const migration of namedMigrations) {
+    if (foundStart) database.exec(migration.sql);
+    if (migration.name === migrationName) foundStart = true;
+    if (migration.name === throughName) return;
+  }
+  throw new Error(
+    `Migration range ${migrationName}..${throughName} was not found`,
+  );
+}
+
+function insertLegacyInvestmentRows(database: DatabaseSync, suffix: string) {
+  database.exec(`
+    INSERT INTO investment_positions
+      (id, connector_id, source_id, asset_type, name, quantity, market_value,
+       currency, as_of_date, created_at, updated_at)
+    VALUES ('position-${suffix}', 'tdcc', 'holding-${suffix}', 'stock', '2317',
+      3, 300, 'TWD', '2026-08-01', '2026-08-01', '2026-08-01');
+    INSERT INTO investment_transactions
+      (id, connector_id, account_id, source_id, asset_type, quantity, amount,
+       currency, created_at, updated_at)
+    VALUES ('trade-${suffix}', 'tdcc', 'broker-mask', 'trade-source-${suffix}',
+      'stock', 3, 300, 'TWD', '2026-08-01', '2026-08-01');
+  `);
+}
 
 function parenthesized(sql: string, start: number) {
   let depth = 1;
@@ -237,20 +278,16 @@ describe("Drizzle schema parity", () => {
 });
 
 describe("personal balance-sheet migration", () => {
-  it("preserves TDCC positions and investment transactions while adding account and custody fields", () => {
+  it("0048 preserves legacy TDCC positions and transactions while adding account fields", () => {
     const database = new DatabaseSync(":memory:");
     try {
-      const migrations = readMigrations();
-      for (const migration of migrations.slice(0, -1)) database.exec(migration);
-      database.exec(`
-        INSERT INTO investment_positions
-          (id, connector_id, source_id, asset_type, name, quantity, market_value, currency, as_of_date, created_at, updated_at)
-        VALUES ('position-1', 'tdcc', 'holding-1', 'stock', '2317', 3, 300, 'TWD', '2026-08-01', '2026-08-01', '2026-08-01');
-        INSERT INTO investment_transactions
-          (id, connector_id, account_id, source_id, quantity, amount, currency, created_at, updated_at)
-        VALUES ('trade-1', 'tdcc', 'broker-mask', 'trade-source-1', 3, 300, 'TWD', '2026-08-01', '2026-08-01');
-      `);
-      database.exec(migrations.at(-1)!);
+      applyMigrationsThrough(database, "0047_sync_activity_details.sql");
+      insertLegacyInvestmentRows(database, "0048");
+      applyMigrationsAfter(
+        database,
+        "0047_sync_activity_details.sql",
+        "0048_personal_balance_sheet.sql",
+      );
       expect(
         database
           .prepare(
@@ -259,9 +296,9 @@ describe("personal balance-sheet migration", () => {
           .all(),
       ).toEqual([
         {
-          id: "position-1",
+          id: "position-0048",
           connector_id: "tdcc",
-          source_id: "holding-1",
+          source_id: "holding-0048",
           quantity: 3,
           market_value: 300,
           investment_account_id: null,
@@ -276,12 +313,94 @@ describe("personal balance-sheet migration", () => {
           .all(),
       ).toEqual([
         {
-          id: "trade-1",
-          source_id: "trade-source-1",
+          id: "trade-0048",
+          source_id: "trade-source-0048",
           quantity: 3,
           amount: 300,
         },
       ]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("0049 preserves 0048 investment data while adding option and observation metadata", () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      applyMigrationsThrough(database, "0048_personal_balance_sheet.sql");
+      insertLegacyInvestmentRows(database, "0049");
+      applyMigrationsAfter(
+        database,
+        "0048_personal_balance_sheet.sql",
+        "0049_balance_sheet_repair_options_and_observations.sql",
+      );
+      expect(
+        database
+          .prepare(
+            `SELECT id, source_id, quantity, market_value, investment_account_id,
+                    custody_status, contract_multiplier, observation_coverage
+             FROM investment_positions WHERE id = 'position-0049'`,
+          )
+          .get(),
+      ).toEqual({
+        id: "position-0049",
+        source_id: "holding-0049",
+        quantity: 3,
+        market_value: 300,
+        investment_account_id: null,
+        custody_status: "free",
+        contract_multiplier: 1,
+        observation_coverage: "complete",
+      });
+      expect(
+        database
+          .prepare(
+            `SELECT id, source_id, quantity, amount, asset_type,
+                    underlying_symbol, contract_symbol
+             FROM investment_transactions WHERE id = 'trade-0049'`,
+          )
+          .get(),
+      ).toEqual({
+        id: "trade-0049",
+        source_id: "trade-source-0049",
+        quantity: 3,
+        amount: 300,
+        asset_type: "stock",
+        underlying_symbol: null,
+        contract_symbol: null,
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("preserves TDCC positions and trades across the explicit 0047→0048→0049 chain", () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      applyMigrationsThrough(database, "0047_sync_activity_details.sql");
+      insertLegacyInvestmentRows(database, "full-chain");
+      applyMigrationsAfter(
+        database,
+        "0048_personal_balance_sheet.sql",
+        "0049_balance_sheet_repair_options_and_observations.sql",
+      );
+      expect(
+        database
+          .prepare(
+            `SELECT p.source_id AS positionSource, p.market_value AS marketValue,
+                    t.source_id AS transactionSource, t.amount
+             FROM investment_positions p
+             JOIN investment_transactions t ON t.id = 'trade-full-chain'
+             WHERE p.id = 'position-full-chain'`,
+          )
+          .get(),
+      ).toEqual({
+        positionSource: "holding-full-chain",
+        marketValue: 300,
+        transactionSource: "trade-source-full-chain",
+        amount: 300,
+      });
+      expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
     } finally {
       database.close();
     }

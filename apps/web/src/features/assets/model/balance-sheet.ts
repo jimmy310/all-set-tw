@@ -16,6 +16,123 @@ export function investmentPositionValue(item: {
   return item.marketValue + (item.cashBalance ?? 0);
 }
 
+export interface InvestmentValuationPosition {
+  assetType: string;
+  marketValue?: number | null;
+  cashBalance?: number | null;
+  currency: string;
+  economicSecurityId?: string | null;
+  observationCoverage?: "complete" | "subset";
+  asOfDate?: string;
+}
+
+/**
+ * Keep source rows intact for holdings detail, while producing the single
+ * economic position used by every portfolio and balance-sheet total.
+ */
+export function reconcileInvestmentPositions<
+  T extends InvestmentValuationPosition,
+>(investments: T[]): T[] {
+  const groups = new Map<string, T[]>();
+  const standalone: T[] = [];
+  for (const position of investments) {
+    if (!position.economicSecurityId) {
+      standalone.push(position);
+      continue;
+    }
+    const rows = groups.get(position.economicSecurityId) ?? [];
+    rows.push(position);
+    groups.set(position.economicSecurityId, rows);
+  }
+
+  const reconciled = [...groups.values()].map((rows) => {
+    const complete = rows
+      .filter((row) => row.observationCoverage !== "subset")
+      .sort(
+        (a, b) =>
+          (b.asOfDate ?? "").localeCompare(a.asOfDate ?? "") ||
+          JSON.stringify(a).localeCompare(JSON.stringify(b)),
+      );
+    if (complete[0]) return complete[0];
+
+    const currencies = new Set(rows.map((row) => row.currency));
+    if (currencies.size !== 1)
+      return { ...rows[0]!, marketValue: null, cashBalance: null };
+    return {
+      ...rows[0]!,
+      marketValue: rows.every((row) => row.marketValue != null)
+        ? rows.reduce((sum, row) => sum + row.marketValue!, 0)
+        : null,
+      cashBalance: rows.every((row) => row.cashBalance == null)
+        ? null
+        : rows.every((row) => row.cashBalance != null)
+          ? rows.reduce((sum, row) => sum + row.cashBalance!, 0)
+          : null,
+    };
+  });
+  return [...standalone, ...reconciled];
+}
+
+export interface InvestmentPortfolioSummary {
+  positions: InvestmentValuationPosition[];
+  netValueTwd: number | null;
+  grossAssetsTwd: number | null;
+  derivativeLiabilitiesTwd: number | null;
+  incomplete: boolean;
+  missingCurrencies: string[];
+}
+
+/** Investment net value includes signed derivative marks; gross assets do not. */
+export function calculateInvestmentPortfolioSummary(
+  investments: InvestmentValuationPosition[],
+  rates: Record<string, number>,
+): InvestmentPortfolioSummary {
+  const positions = reconcileInvestmentPositions(investments);
+  const missingCurrencies = new Set<string>();
+  const values = positions.map((position) => {
+    const value = investmentPositionValue(position);
+    if (value == null) return { position, value: null };
+    if (position.currency === "TWD") return { position, value };
+    const rate = rates[position.currency];
+    if (rate == null || !Number.isFinite(rate) || rate <= 0) {
+      if (value !== 0) missingCurrencies.add(position.currency);
+      return { position, value: value === 0 ? 0 : null };
+    }
+    return { position, value: value * rate };
+  });
+  const complete = values.every(({ value }) => value != null);
+  const netValueTwd = complete
+    ? values.reduce((sum, item) => sum + item.value!, 0)
+    : null;
+  const grossAssetsTwd = complete
+    ? values.reduce(
+        (sum, { position, value }) =>
+          sum +
+          (position.assetType === "option" || position.assetType === "future"
+            ? Math.max(value!, 0)
+            : value!),
+        0,
+      )
+    : null;
+  const derivativeValues = values.filter(
+    ({ position }) =>
+      position.assetType === "option" || position.assetType === "future",
+  );
+  const derivativeLiabilitiesTwd = derivativeValues.every(
+    ({ value }) => value != null,
+  )
+    ? derivativeValues.reduce((sum, { value }) => sum + Math.max(-value!, 0), 0)
+    : null;
+  return {
+    positions,
+    netValueTwd,
+    grossAssetsTwd,
+    derivativeLiabilitiesTwd,
+    incomplete: !complete,
+    missingCurrencies: [...missingCurrencies].sort(),
+  };
+}
+
 export interface PositionObservation {
   economicPositionId: string;
   quantity: number;
@@ -134,42 +251,7 @@ export function calculatePersonalBalanceSheet(input: {
   }>;
   rates: Record<string, number>;
 }) {
-  const grouped = new Map<string, typeof input.investments>();
-  const standalone = input.investments.filter(
-    (item) => !item.economicSecurityId,
-  );
-  for (const item of input.investments) {
-    if (!item.economicSecurityId) continue;
-    const rows = grouped.get(item.economicSecurityId) ?? [];
-    rows.push(item);
-    grouped.set(item.economicSecurityId, rows);
-  }
-  const reconciledPositions = [
-    ...standalone,
-    ...[...grouped.values()].map((rows) => {
-      const complete = rows.filter(
-        (row) => row.observationCoverage !== "subset",
-      );
-      const source = complete.sort((a, b) =>
-        (b.asOfDate ?? "").localeCompare(a.asOfDate ?? ""),
-      )[0];
-      if (source) return source;
-      const currencies = new Set(rows.map((row) => row.currency));
-      if (currencies.size !== 1)
-        return { ...rows[0]!, marketValue: null, cashBalance: null };
-      return {
-        ...rows[0]!,
-        marketValue: rows.every((row) => row.marketValue != null)
-          ? rows.reduce((sum, row) => sum + row.marketValue!, 0)
-          : null,
-        cashBalance: rows.every((row) => row.cashBalance == null)
-          ? null
-          : rows.every((row) => row.cashBalance != null)
-            ? rows.reduce((sum, row) => sum + row.cashBalance!, 0)
-            : null,
-      };
-    }),
-  ];
+  const reconciledPositions = reconcileInvestmentPositions(input.investments);
   const assets: ValuedAmount[] = [
     ...input.bankAccounts
       .filter((item) => item.accountType !== "credit")

@@ -46,22 +46,29 @@
   let collateralLiabilityId = $state("");
   let collateralAssetChoice = $state("");
   const collateralChoices = $derived([
-    ...($assets.data ?? []).map((asset) => ({
-      value: `manual_asset:${asset.id}`,
+    ...($assets.data ?? []).map((asset, index) => ({
+      value: `manual-asset-${index}`,
+      assetType: "manual_asset",
+      assetId: asset.id,
       label: `不動產／其他資產：${asset.name}`,
     })),
-    ...($positions.data ?? []).map((position) => ({
-      value: `investment_position:${position.id}`,
+    ...($positions.data ?? []).map((position, index) => ({
+      value: `investment-position-${index}`,
+      assetType: "investment_position",
+      assetId: position.id,
       label: `投資：${position.symbol ?? position.name}`,
     })),
   ]);
   const linkCollateral = createMutation({
     mutationFn: () => {
-      const [assetType, assetId] = collateralAssetChoice.split(":");
+      const choice = collateralChoices.find(
+        (item) => item.value === collateralAssetChoice,
+      );
+      if (!choice) throw new Error("Collateral asset selection is invalid.");
       return api.post("/api/collateral-relationships", {
         liabilityAccountId: collateralLiabilityId,
-        assetType,
-        assetId,
+        assetType: choice.assetType,
+        assetId: choice.assetId,
         currency: "TWD",
       });
     },
@@ -265,7 +272,8 @@
           {#each $collateral.data ?? [] as relation (relation.id)}
             {@const asset = collateralChoices.find(
               (item) =>
-                item.value === `${relation.assetType}:${relation.assetId}`,
+                item.assetType === relation.assetType &&
+                item.assetId === relation.assetId,
             )}
             <li class="flex items-center justify-between gap-3 py-2 text-sm">
               <span

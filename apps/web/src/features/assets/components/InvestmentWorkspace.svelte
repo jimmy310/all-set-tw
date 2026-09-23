@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { createQuery } from "@tanstack/svelte-query";
   import type {
     InvestmentRow,
     InvestmentTransactionRow,
   } from "@/data/investments/types";
   import type { ApiClient } from "@/shared/api/client";
   import ManualInvestments from "./ManualInvestments.svelte";
+  import { investmentAccountsQuery } from "@/data/investments/queries";
   import { investmentPositionValue } from "../model/balance-sheet";
   import {
     formatCurrency,
@@ -24,13 +26,14 @@
     positions: InvestmentRow[];
     api: ApiClient;
     trades: InvestmentTransactionRow[];
-    total: number;
+    total: number | null;
     tradesPending?: boolean;
     tradesError?: boolean;
     compact?: boolean;
   } = $props();
 
   let tab = $state<"holdings" | "transactions">("holdings");
+  const accounts = createQuery(investmentAccountsQuery(() => api));
 
   function tradeDisplay(trade: InvestmentTransactionRow) {
     if (trade.amount != null && trade.price != null && trade.price !== 1)
@@ -67,9 +70,12 @@
     </header>
     <div class="grid grid-cols-2 gap-6 border-b border-ink/10 px-5 py-4">
       <div>
-        <p class="text-caption text-subtle">投資市值</p>
+        <p class="text-caption text-subtle">投資淨值</p>
         <p class="mt-2 text-lg font-medium tabular-nums text-steel">
-          {formatCurrency(total)}
+          {total == null ? "資料不完整" : formatCurrency(total)}
+        </p>
+        <p class="mt-1 text-caption text-subtle">
+          含衍生品負向公允價值；資產負債表將其列為負債
         </p>
       </div>
       <div>
@@ -117,10 +123,25 @@
                   {positionTitle(position)}
                 </p>
                 <p class="mt-1 text-caption text-subtle">
-                  {position.assetType === "option"
-                    ? `${position.quantity == null ? "數量未知" : `${formatNumber(position.quantity)} 口`} · 乘數 ${position.contractMultiplier ?? 1}`
-                    : `${position.quantity == null ? "數量未知" : `${formatNumber(position.quantity)} 單位`}`}
+                  {position.assetType === "cash"
+                    ? position.cashBalance == null
+                      ? "現金餘額未知"
+                      : `${formatNumber(position.cashBalance)} ${position.currency} 現金`
+                    : position.assetType === "option"
+                      ? `${position.quantity == null ? "數量未知" : `${formatNumber(position.quantity)} 口`} · 乘數 ${position.contractMultiplier ?? 1}`
+                      : `${position.quantity == null ? "數量未知" : `${formatNumber(position.quantity)} 單位`}`}
                   · {position.currency} · {position.asOfDate}
+                  {#if position.economicSecurityId}
+                    · 已連結來源（{position.observationCoverage === "subset"
+                      ? "子集"
+                      : "完整"}觀察）
+                  {/if}
+                  {#if position.investmentAccountId}
+                    <br />
+                    {($accounts.data ?? []).find(
+                      (account) => account.id === position.investmentAccountId,
+                    )?.displayName ?? "投資帳戶"}
+                  {/if}
                 </p>
               </div>
               <p class="text-right text-sm font-medium tabular-nums text-steel">

@@ -2,6 +2,62 @@ import { describe, expect, it } from "vitest";
 import { calculateAssetSummary } from "./summary";
 
 describe("calculateAssetSummary", () => {
+  it("uses the reconciled economic total for the Assets summary and balance sheet", () => {
+    const summary = calculateAssetSummary({
+      bank: { accounts: [], transactions: [] },
+      investments: [
+        {
+          id: "broker-complete",
+          assetType: "stock",
+          name: "2330",
+          marketValue: 8_000,
+          currency: "TWD",
+          asOfDate: "2026-09-23",
+          economicSecurityId: "security:2330",
+          observationCoverage: "complete",
+        },
+        {
+          id: "custody-subset",
+          assetType: "stock",
+          name: "2330 collateral",
+          marketValue: 5_000,
+          currency: "TWD",
+          asOfDate: "2026-09-23",
+          economicSecurityId: "security:2330",
+          observationCoverage: "subset",
+        },
+      ],
+      manualAssets: [],
+      rates: [],
+    });
+    expect(summary.investmentTotal).toBe(8_000);
+    expect(summary.investmentGrossAssets).toBe(8_000);
+    expect(summary.grossAssets).toBe(8_000);
+  });
+
+  it("reports investment net value separately from gross assets for short options", () => {
+    const summary = calculateAssetSummary({
+      bank: { accounts: [], transactions: [] },
+      investments: [
+        {
+          id: "short-call",
+          assetType: "option",
+          name: "TSM Call",
+          quantity: -1,
+          marketValue: -2_500,
+          currency: "TWD",
+          asOfDate: "2026-09-23",
+        },
+      ],
+      manualAssets: [],
+      rates: [],
+    });
+    expect(summary.investmentTotal).toBe(-2_500);
+    expect(summary.investmentGrossAssets).toBe(0);
+    expect(summary.totalLiabilities).toBe(2_500);
+    expect(summary.netWorth).toBe(-2_500);
+  });
+
   it("converts balances and groups accounts and cards by institution", () => {
     const summary = calculateAssetSummary({
       bank: {

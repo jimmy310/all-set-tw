@@ -8,6 +8,16 @@ import {
   deleteCollateralRelationship,
   listCollateralRelationships,
 } from "../../../src/features/liabilities/repository";
+import { addCollateralRelationship } from "../../../src/features/liabilities/service";
+import {
+  createManualAsset,
+  deleteManualAsset,
+} from "../../../src/features/manual-assets/repository";
+import {
+  createManualInvestmentAccount,
+  createManualInvestmentPosition,
+  deleteManualInvestmentPosition,
+} from "../../../src/features/investments/repository";
 import { createTestD1 } from "../../../../../packages/db/testing/d1";
 
 describe("liability repository", () => {
@@ -180,5 +190,132 @@ describe("liability repository", () => {
     ]);
     await deleteCollateralRelationship(harness.binding, "link-house");
     expect(await listCollateralRelationships(harness.binding)).toHaveLength(0);
+  });
+
+  it("validates collateral targets and preserves colon-containing IDs through link/unlink", async () => {
+    const now = "2026-09-23T00:00:00.000Z";
+    await createLiability(harness.binding, {
+      id: "manual-liability:colon-targets",
+      liabilityType: "mortgage",
+      provider: null,
+      name: "Collateral targets",
+      maskedIdentity: null,
+      currency: "TWD",
+      originalPrincipal: 1_000,
+      interestRate: null,
+      interestRateType: null,
+      startDate: null,
+      maturityDate: null,
+      monthlyPayment: null,
+      nextPaymentDate: null,
+      outstandingPrincipal: 800,
+      accruedInterest: null,
+      asOfAt: now,
+      now,
+    });
+    await createManualAsset(harness.binding, {
+      id: "manual:1234-5678",
+      name: "Colon House",
+      category: "real_estate",
+      note: null,
+      currency: "TWD",
+      value: 5_000,
+      date: "2026-09-23",
+      now,
+    });
+    await createManualInvestmentAccount(harness.binding, {
+      id: "manual-investment-account:colon-target",
+      provider: "Broker",
+      accountType: "brokerage",
+      displayName: "Colon account",
+      maskedIdentity: null,
+      currency: "USD",
+      market: "US",
+      now,
+    });
+    await createManualInvestmentPosition(harness.binding, {
+      id: "manual-investment-position:abcd-efgh",
+      accountId: "manual-investment-account:colon-target",
+      assetType: "stock",
+      symbol: "TSM",
+      name: "TSMC",
+      quantity: 1,
+      marketValue: 100,
+      cashBalance: null,
+      currency: "USD",
+      averageCost: null,
+      costBasis: null,
+      custodyStatus: "free",
+      asOfDate: "2026-09-23",
+      now,
+    });
+
+    for (const target of [
+      { assetType: "manual_asset", assetId: "manual:missing" },
+      {
+        assetType: "investment_position",
+        assetId: "manual-investment-position:missing",
+      },
+      { assetType: "bank_account", assetId: "bank:missing" },
+      { assetType: "other", assetId: "unvalidated:other" },
+    ])
+      await expect(
+        addCollateralRelationship(harness.binding, {
+          liabilityAccountId: "manual-liability:colon-targets",
+          ...target,
+          currency: "TWD",
+        }),
+      ).resolves.toBe(false);
+    expect(await listCollateralRelationships(harness.binding)).toHaveLength(0);
+
+    await expect(
+      addCollateralRelationship(harness.binding, {
+        liabilityAccountId: "manual-liability:colon-targets",
+        assetType: "manual_asset",
+        assetId: "manual:1234-5678",
+        currency: "TWD",
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      addCollateralRelationship(harness.binding, {
+        liabilityAccountId: "manual-liability:colon-targets",
+        assetType: "investment_position",
+        assetId: "manual-investment-position:abcd-efgh",
+        currency: "TWD",
+      }),
+    ).resolves.toBe(true);
+    expect(await listCollateralRelationships(harness.binding)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          assetType: "manual_asset",
+          assetId: "manual:1234-5678",
+        }),
+        expect.objectContaining({
+          assetType: "investment_position",
+          assetId: "manual-investment-position:abcd-efgh",
+        }),
+      ]),
+    );
+    expect(await deleteManualAsset(harness.binding, "manual:1234-5678")).toBe(
+      false,
+    );
+    expect(
+      await deleteManualInvestmentPosition(
+        harness.binding,
+        "manual-investment-position:abcd-efgh",
+      ),
+    ).toBe(false);
+
+    for (const relation of await listCollateralRelationships(harness.binding))
+      await deleteCollateralRelationship(harness.binding, relation.id);
+    expect(await deleteManualAsset(harness.binding, "manual:1234-5678")).toBe(
+      true,
+    );
+    expect(
+      await deleteManualInvestmentPosition(
+        harness.binding,
+        "manual-investment-position:abcd-efgh",
+      ),
+    ).toBe(true);
   });
 });

@@ -43,6 +43,7 @@
   import LatestSyncReportCard from "./components/LatestSyncReportCard.svelte";
   import {
     calculatePersonalBalanceSheet,
+    calculateInvestmentPortfolioSummary,
     investmentPositionValue,
   } from "@/features/assets/model/balance-sheet";
 
@@ -109,12 +110,8 @@
       0,
     ),
   );
-  const investmentTotal = $derived(
-    ($investments.data ?? []).reduce(
-      (sum, item) =>
-        sum + toTwd(investmentPositionValue(item) ?? 0, item.currency),
-      0,
-    ),
+  const investmentPortfolio = $derived(
+    calculateInvestmentPortfolioSummary($investments.data ?? [], rateValues),
   );
   const manualTotal = $derived(
     ($manualAssets.data ?? []).reduce(
@@ -122,7 +119,6 @@
       0,
     ),
   );
-  const gross = $derived(depositTotal + investmentTotal + manualTotal);
   const balanceSheet = $derived(
     calculatePersonalBalanceSheet({
       bankAccounts: bankData.accounts,
@@ -148,16 +144,10 @@
       detail: `${deposits.length} 個帳戶`,
     },
     {
-      label: "投資",
-      value: ($investments.data ?? []).some(
-        (item) =>
-          investmentPositionValue(item) == null ||
-          (item.currency !== "TWD" &&
-            rateValues[item.currency] == null &&
-            (investmentPositionValue(item) ?? 0) !== 0),
-      )
+      label: "投資資產",
+      value: investmentPortfolio.incomplete
         ? null
-        : investmentTotal,
+        : investmentPortfolio.grossAssetsTwd,
       detail: `${$investments.data?.length ?? 0} 個持倉`,
     },
     {
@@ -310,7 +300,7 @@
               currency: account.currency,
               amount: Math.abs(account.balance ?? 0),
             })),
-            ...($investments.data ?? []).map((item) => ({
+            ...investmentPortfolio.positions.map((item) => ({
               currency: item.currency,
               amount: investmentPositionValue(item) ?? 0,
             })),

@@ -188,6 +188,78 @@ describe("investment repository", () => {
     ).toEqual(["ibkr-tsm", "ibkr-aapl", "yuanta-tsm", "yuanta-msft"].sort());
   });
 
+  it("keeps each manual position current independently of account-level dates", async () => {
+    for (const id of ["manual-a", "manual-b"])
+      await harness.binding
+        .prepare(
+          "INSERT INTO investment_accounts (id, connector_id, source_id, provider, account_type, display_name, currency, created_at, updated_at) VALUES (?, 'manual', ?, 'broker', 'brokerage', ?, 'USD', ?, ?)",
+        )
+        .bind(id, id, id, now, now)
+        .run();
+    const rows = [
+      ["nvda-old", "stable-nvda", "manual-a", "NVDA", "stock", "2026-09-21"],
+      [
+        "nvda-current",
+        "stable-nvda",
+        "manual-a",
+        "NVDA",
+        "stock",
+        "2026-09-23",
+      ],
+      ["tsm", "stable-tsm", "manual-a", "TSM", "stock", "2026-09-22"],
+      ["aapl", "stable-aapl", "manual-a", "AAPL", "stock", "2026-09-24"],
+      [
+        "option-1",
+        "stable-option-1",
+        "manual-a",
+        "NVDA 2028 Call",
+        "option",
+        "2026-09-21",
+      ],
+      [
+        "option-2",
+        "stable-option-2",
+        "manual-a",
+        "NVDA 2029 Put",
+        "option",
+        "2026-09-23",
+      ],
+      [
+        "account-b",
+        "stable-account-b",
+        "manual-b",
+        "MSFT",
+        "stock",
+        "2026-09-20",
+      ],
+    ] as const;
+    for (const [id, sourceId, accountId, name, assetType, date] of rows)
+      await harness.binding
+        .prepare(
+          `INSERT INTO investment_positions
+             (id, connector_id, source_id, investment_account_id, asset_type, name,
+              currency, as_of_date, created_at, updated_at)
+           VALUES (?, 'manual', ?, ?, ?, ?, 'USD', ?, ?, ?)`,
+        )
+        .bind(id, sourceId, accountId, assetType, name, date, now, now)
+        .run();
+
+    expect(
+      (await repository.listLatestInvestmentPositions(harness.binding, 20))
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual(
+      [
+        "nvda-current",
+        "tsm",
+        "aapl",
+        "option-1",
+        "option-2",
+        "account-b",
+      ].sort(),
+    );
+  });
+
   it("accepts option transaction type and contract identity metadata", async () => {
     await trade({
       id: "option-trade",
@@ -217,6 +289,7 @@ describe("investment repository", () => {
   it("stores explicit economic identity and observation coverage without matching on symbol", async () => {
     await position({
       id: "linked-source",
+      connectorId: "manual",
       sourceId: "source:2330",
       assetType: "stock",
       name: "2330",
@@ -236,7 +309,7 @@ describe("investment repository", () => {
       economicSecurityId: "manual-economic-id:2330:account-a",
       observationCoverage: "subset",
       sourceId: "source:2330",
-      connectorId: "tdcc",
+      connectorId: "manual",
     });
   });
 });

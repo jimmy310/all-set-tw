@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateBalanceSheet,
+  calculateInvestmentPortfolioSummary,
   calculatePersonalBalanceSheet,
   investmentPositionValue,
   reconcilePositionObservations,
@@ -113,6 +114,52 @@ describe("personal balance sheet invariants", () => {
         rates: {},
       }),
     ).toMatchObject({ grossAssets: null, missingCurrencies: ["EUR"] });
+  });
+
+  it("values brokerage cash in its account currency and preserves zero versus unknown", () => {
+    const cash = {
+      assetType: "cash",
+      marketValue: null,
+      quantity: null,
+      cashBalance: 1_850,
+      currency: "USD",
+    };
+    expect(
+      calculatePersonalBalanceSheet({
+        bankAccounts: [],
+        investments: [cash],
+        manualAssets: [],
+        liabilities: [],
+        rates: { USD: 32 },
+      }).grossAssets,
+    ).toBe(59_200);
+    expect(
+      calculatePersonalBalanceSheet({
+        bankAccounts: [],
+        investments: [{ ...cash, cashBalance: 0 }],
+        manualAssets: [],
+        liabilities: [],
+        rates: {},
+      }).grossAssets,
+    ).toBe(0);
+    expect(
+      calculatePersonalBalanceSheet({
+        bankAccounts: [],
+        investments: [{ ...cash, cashBalance: null }],
+        manualAssets: [],
+        liabilities: [],
+        rates: { USD: 32 },
+      }).grossAssets,
+    ).toBeNull();
+    expect(
+      calculatePersonalBalanceSheet({
+        bankAccounts: [],
+        investments: [cash],
+        manualAssets: [],
+        liabilities: [],
+        rates: {},
+      }),
+    ).toMatchObject({ grossAssets: null, missingCurrencies: ["USD"] });
   });
 
   it("does not treat an unknown non-cash market value as a zero cash balance", () => {
@@ -260,5 +307,94 @@ describe("personal balance sheet invariants", () => {
         rates: { USD: 32 },
       }).grossAssets,
     ).toBeNull();
+  });
+
+  it("reconciles explicit complete/subset observations once for portfolio and balance-sheet totals", () => {
+    const positions = [
+      {
+        assetType: "stock",
+        marketValue: 8_000,
+        currency: "TWD",
+        economicSecurityId: "manual:2330:account-1",
+        observationCoverage: "complete" as const,
+        asOfDate: "2026-09-23",
+      },
+      {
+        assetType: "stock",
+        marketValue: 5_000,
+        currency: "TWD",
+        economicSecurityId: "manual:2330:account-1",
+        observationCoverage: "subset" as const,
+        asOfDate: "2026-09-23",
+      },
+    ];
+    const portfolio = calculateInvestmentPortfolioSummary(positions, {});
+    const balanceSheet = calculatePersonalBalanceSheet({
+      bankAccounts: [],
+      investments: positions,
+      manualAssets: [],
+      liabilities: [],
+      rates: {},
+    });
+    expect(portfolio.netValueTwd).toBe(8_000);
+    expect(portfolio.grossAssetsTwd).toBe(8_000);
+    expect(balanceSheet.grossAssets).toBe(8_000);
+  });
+
+  it("keeps negative derivative fair value in portfolio net value and liabilities", () => {
+    const positions = [
+      { assetType: "option", marketValue: -2_500, currency: "TWD" },
+    ];
+    expect(calculateInvestmentPortfolioSummary(positions, {})).toMatchObject({
+      netValueTwd: -2_500,
+      grossAssetsTwd: 0,
+      derivativeLiabilitiesTwd: 2_500,
+    });
+    expect(
+      calculatePersonalBalanceSheet({
+        bankAccounts: [],
+        investments: positions,
+        manualAssets: [],
+        liabilities: [],
+        rates: {},
+      }),
+    ).toMatchObject({
+      grossAssets: 0,
+      totalLiabilities: 2_500,
+      netWorth: -2_500,
+    });
+  });
+
+  it("keeps unknown mortgage principal incomplete while accepting zero principal", () => {
+    const base = {
+      bankAccounts: [],
+      investments: [],
+      manualAssets: [],
+      rates: {},
+    };
+    expect(
+      calculatePersonalBalanceSheet({
+        ...base,
+        liabilities: [
+          {
+            liabilityType: "mortgage",
+            outstandingPrincipal: null,
+            currency: "TWD",
+          },
+        ],
+      }),
+    ).toMatchObject({ totalLiabilities: null, netWorth: null });
+    expect(
+      calculatePersonalBalanceSheet({
+        ...base,
+        liabilities: [
+          {
+            liabilityType: "mortgage",
+            outstandingPrincipal: 0,
+            currency: "TWD",
+          },
+        ],
+      }),
+    ).toMatchObject({ totalLiabilities: 0, netWorth: 0 });
   });
 });

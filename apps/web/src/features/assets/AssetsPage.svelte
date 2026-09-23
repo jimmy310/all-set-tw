@@ -165,7 +165,7 @@
           </p>
         </div>
         <div class="min-w-0">
-          <p class="text-caption text-subtle">投資</p>
+          <p class="text-caption text-subtle">投資淨值</p>
           <p
             class="mt-2 text-lg font-medium tracking-tight tabular-nums md:hidden"
           >
@@ -286,7 +286,7 @@
                 onclick={() => (selectedKey = "investments")}
               >
                 <span class="min-w-0">
-                  <strong class="block text-sm">投資</strong>
+                  <strong class="block text-sm">投資淨值</strong>
                   <small class="mt-1 block text-caption text-subtle">
                     {$investments.data?.length ?? 0} 個持倉 · 持倉與交易紀錄
                   </small>
@@ -334,7 +334,9 @@
               {api}
               positions={$investments.data ?? []}
               trades={$trades.data ?? []}
-              total={summary.investmentTotal}
+              total={summary.investmentIncomplete
+                ? null
+                : summary.investmentTotal}
               tradesPending={$trades.isPending}
               tradesError={$trades.isError}
             />
@@ -448,7 +450,9 @@
               {api}
               positions={$investments.data ?? []}
               trades={$trades.data ?? []}
-              total={summary.investmentTotal}
+              total={summary.investmentIncomplete
+                ? null
+                : summary.investmentTotal}
               tradesPending={$trades.isPending}
               tradesError={$trades.isError}
               compact

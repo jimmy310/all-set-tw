@@ -3,6 +3,7 @@ import type { BankAccountRow, BankData } from "@/data/bank/types";
 import type { InvestmentRow } from "@/data/investments/types";
 import { missingExchangeRateCurrencies } from "@/shared/format/financial";
 import {
+  calculateInvestmentPortfolioSummary,
   calculatePersonalBalanceSheet,
   investmentPositionValue,
 } from "./balance-sheet";
@@ -36,6 +37,7 @@ export interface AssetSummary {
   cards: BankAccountRow[];
   bankTotal: number;
   investmentTotal: number;
+  investmentGrossAssets: number;
   investmentIncomplete: boolean;
   bankIncomplete: boolean;
   manualIncomplete: boolean;
@@ -76,6 +78,10 @@ export function calculateAssetSummary({
   const rateValues = Object.fromEntries(
     (rates ?? []).map((rate) => [rate.currency, rate.rateTwd]),
   );
+  const portfolio = calculateInvestmentPortfolioSummary(
+    investments,
+    rateValues,
+  );
   const toTwd = (value: number, currency: string) =>
     currency === "TWD" ? value : value * (rateValues[currency] ?? 0);
   const deposits = bank.accounts.filter(
@@ -94,7 +100,7 @@ export function calculateAssetSummary({
         currency: account.currency,
         amount: Math.abs(account.balance ?? 0),
       })),
-      ...investments.map((item) => ({
+      ...portfolio.positions.map((item) => ({
         currency: item.currency,
         amount: investmentPositionValue(item) ?? 0,
       })),
@@ -116,11 +122,8 @@ export function calculateAssetSummary({
     (sum, account) => sum + toTwd(account.balance ?? 0, account.currency),
     0,
   );
-  const investmentTotal = investments.reduce(
-    (sum, item) =>
-      sum + toTwd(investmentPositionValue(item) ?? 0, item.currency),
-    0,
-  );
+  const investmentTotal = portfolio.netValueTwd ?? 0;
+  const investmentGrossAssets = portfolio.grossAssetsTwd ?? 0;
   const manualTotal = manualAssets.reduce(
     (sum, item) => sum + toTwd(item.value ?? 0, item.currency),
     0,
@@ -214,13 +217,8 @@ export function calculateAssetSummary({
     cards,
     bankTotal,
     investmentTotal,
-    investmentIncomplete: investments.some(
-      (item) =>
-        investmentPositionValue(item) == null ||
-        (item.currency !== "TWD" &&
-          rateValues[item.currency] == null &&
-          (investmentPositionValue(item) ?? 0) !== 0),
-    ),
+    investmentGrossAssets,
+    investmentIncomplete: portfolio.incomplete,
     bankIncomplete: bank.accounts.some(
       (item) =>
         item.balance == null ||
@@ -243,7 +241,11 @@ export function calculateAssetSummary({
     netWorth: balanceSheet.netWorth,
     institutionGroups,
     missingCurrencies: [
-      ...new Set([...missingCurrencies, ...balanceSheet.missingCurrencies]),
+      ...new Set([
+        ...missingCurrencies,
+        ...portfolio.missingCurrencies,
+        ...balanceSheet.missingCurrencies,
+      ]),
     ].sort(),
   };
 }
