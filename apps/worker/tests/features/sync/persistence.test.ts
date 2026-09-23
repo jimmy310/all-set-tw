@@ -6,6 +6,8 @@ import { prepareObankTimeDepositWrite } from "../../../src/features/sync/obank-t
 import {
   bankAccountRecord as mapAccount,
   bankBalanceSnapshotRecord as mapBalance,
+  investmentPositionRecord,
+  investmentTransactionRecord,
 } from "../../../src/features/sync/record-mapper";
 import {
   listBankAccounts,
@@ -21,6 +23,10 @@ import {
   persistStagedSyncWrite,
   type SyncWriteRecord,
 } from "../../../src/features/sync/persistence";
+import {
+  getInvestmentPage,
+  linkPositionReconciliation,
+} from "../../../src/features/investments/service";
 import {
   linkCanonicalBankAccountsStatement,
   reconcileEsunLifecycleShadowStatements,
@@ -245,6 +251,200 @@ function creditCardBillRecord(
 }
 
 describe("staged sync persistence", () => {
+  it("round trips option metadata through mapping, staging, and promotion", async () => {
+    const db = createDb();
+    db.database
+      .prepare(
+        `INSERT INTO investment_accounts
+         (id, connector_id, source_id, provider, account_type, display_name, currency, created_at, updated_at)
+         VALUES ('broker-account-1', 'tdcc', 'broker-account-1', 'Synthetic Broker', 'brokerage', 'Options', 'USD', 'now', 'now')`,
+      )
+      .run();
+    const now = "2026-09-23T00:00:00.000Z";
+    const position = investmentPositionRecord(
+      "tdcc",
+      {
+        sourceId: "option-position-1",
+        sourcePositionKey: "broker-account-1:TSM281215C00280000",
+        investmentAccountId: "broker-account-1",
+        assetType: "option",
+        symbol: "TSM281215C00280000",
+        name: "TSM Dec 15 2028 280 Call",
+        quantity: -2,
+        marketValue: -2_500,
+        currency: "USD",
+        asOfDate: "2026-09-23",
+        underlyingSymbol: "TSM",
+        expirationDate: "2028-12-15",
+        strikePrice: 280,
+        optionRight: "call",
+        contractMultiplier: 100,
+        contractSymbol: "TSM281215C00280000",
+        optionMarkPrice: 12.5,
+        economicSecurityId: "economy:tsm-option:2028-12-15:280c",
+        observationCoverage: "subset",
+      },
+      now,
+    );
+    const transaction = investmentTransactionRecord(
+      "tdcc",
+      {
+        accountId: "broker-account-1",
+        sourceId: "option-trade-1",
+        assetType: "option",
+        symbol: "TSM281215C00280000",
+        name: "TSM Dec 15 2028 280 Call",
+        currency: "USD",
+        underlyingSymbol: "TSM",
+        expirationDate: "2028-12-15",
+        strikePrice: 280,
+        optionRight: "call",
+        contractSymbol: "TSM281215C00280000",
+        externalContractId: "broker-contract-1",
+      },
+      now,
+    );
+
+    await persistStagedSyncWrite(db as unknown as D1Database, {
+      records: [position, transaction],
+    });
+
+    expect(
+      db.database
+        .prepare(
+          `SELECT source_position_key AS sourcePositionKey,
+                  investment_account_id AS investmentAccountId,
+                  underlying_symbol AS underlyingSymbol,
+                  expiration_date AS expirationDate,
+                  strike_price AS strikePrice,
+                  option_right AS optionRight,
+                  contract_multiplier AS contractMultiplier,
+                  contract_symbol AS contractSymbol,
+                  option_mark_price AS optionMarkPrice,
+                  economic_security_id AS economicSecurityId,
+                  observation_coverage AS observationCoverage
+           FROM investment_positions WHERE source_id = 'option-position-1'`,
+        )
+        .get(),
+    ).toEqual({
+      sourcePositionKey: "broker-account-1:TSM281215C00280000",
+      investmentAccountId: "broker-account-1",
+      underlyingSymbol: "TSM",
+      expirationDate: "2028-12-15",
+      strikePrice: 280,
+      optionRight: "call",
+      contractMultiplier: 100,
+      contractSymbol: "TSM281215C00280000",
+      optionMarkPrice: 12.5,
+      economicSecurityId: "economy:tsm-option:2028-12-15:280c",
+      observationCoverage: "subset",
+    });
+    expect(
+      db.database
+        .prepare(
+          `SELECT underlying_symbol AS underlyingSymbol,
+                  expiration_date AS expirationDate,
+                  strike_price AS strikePrice,
+                  option_right AS optionRight,
+                  contract_symbol AS contractSymbol,
+                  external_contract_id AS externalContractId
+           FROM investment_transactions WHERE source_id = 'option-trade-1'`,
+        )
+        .get(),
+    ).toEqual({
+      underlyingSymbol: "TSM",
+      expirationDate: "2028-12-15",
+      strikePrice: 280,
+      optionRight: "call",
+      contractSymbol: "TSM281215C00280000",
+      externalContractId: "broker-contract-1",
+    });
+  });
+
+  it("keeps connector reconciliation overrides across a newly promoted snapshot", async () => {
+    const db = createDb();
+    const now = "2026-09-23T00:00:00.000Z";
+    const first = investmentPositionRecord(
+      "tdcc",
+      {
+        sourceId: "acct-1:2330:2026-09-22",
+        sourcePositionKey: "acct-1:2330",
+        assetType: "stock",
+        symbol: "2330",
+        name: "TSMC",
+        quantity: 3000,
+        marketValue: 3_000_000,
+        currency: "TWD",
+        asOfDate: "2026-09-22",
+        economicSecurityId: "provider:source-group",
+        observationCoverage: "complete",
+      },
+      now,
+    );
+    await persistStagedSyncWrite(db as unknown as D1Database, {
+      records: [first],
+    });
+    const firstId = String(first.payload.id);
+    expect(
+      await linkPositionReconciliation(db as unknown as D1Database, firstId, {
+        economicSecurityId: "user:economic-2330",
+        observationCoverage: "subset",
+      }),
+    ).toBe(true);
+
+    const second = investmentPositionRecord(
+      "tdcc",
+      {
+        sourceId: "acct-1:2330:2026-09-23",
+        sourcePositionKey: "acct-1:2330",
+        assetType: "stock",
+        symbol: "2330",
+        name: "TSMC",
+        quantity: 3500,
+        marketValue: 3_500_000,
+        currency: "TWD",
+        asOfDate: "2026-09-23",
+        economicSecurityId: "provider:source-group",
+        observationCoverage: "complete",
+      },
+      now,
+    );
+    await persistStagedSyncWrite(db as unknown as D1Database, {
+      records: [second],
+    });
+
+    const page = await getInvestmentPage(db as unknown as D1Database, 20);
+    expect(page.positions).toHaveLength(1);
+    expect(page.positions[0]).toMatchObject({
+      id: second.payload.id,
+      economicSecurityId: "user:economic-2330",
+      observationCoverage: "subset",
+      sourceEconomicSecurityId: "provider:source-group",
+      sourceObservationCoverage: "complete",
+      hasReconciliationOverride: true,
+    });
+    expect(page.positions[0]).not.toHaveProperty("sourceId");
+    expect("sourcePositionKey" in page.positions[0]!).toBe(false);
+    expect(
+      db.database
+        .prepare(
+          `SELECT economic_security_id, observation_coverage
+           FROM investment_positions WHERE id = ?`,
+        )
+        .get(String(second.payload.id)),
+    ).toEqual({
+      economic_security_id: "provider:source-group",
+      observation_coverage: "complete",
+    });
+    expect(
+      db.database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM investment_reconciliation_overrides",
+        )
+        .get(),
+    ).toEqual({ count: 1 });
+  });
+
   it("seeds a disabled CTBC all-scope sync job", () => {
     const db = createDb();
 

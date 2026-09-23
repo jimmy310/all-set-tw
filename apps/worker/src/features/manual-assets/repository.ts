@@ -126,6 +126,13 @@ export async function updateManualAsset(
 }
 
 export async function deleteManualAsset(db: D1Database, id: string) {
+  const links = await db
+    .prepare(
+      "SELECT COUNT(*) AS count FROM collateral_relationships WHERE asset_type = 'manual_asset' AND asset_id = ?",
+    )
+    .bind(id)
+    .first<{ count: number }>();
+  if ((links?.count ?? 0) > 0) return false;
   const database = createDrizzle(db);
   await database.batch([
     database
@@ -138,6 +145,7 @@ export async function deleteManualAsset(db: D1Database, id: string) {
       ),
     database.delete(manualAssets).where(eq(manualAssets.id, id)),
   ]);
+  return true;
 }
 
 export async function listManualAssetHistory(db: D1Database, id: string) {

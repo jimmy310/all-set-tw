@@ -68,20 +68,41 @@ export interface InvoiceLineItem {
   raw?: unknown;
 }
 
-export type AssetType = "stock" | "etf" | "fund";
+export type AssetType =
+  | "stock"
+  | "etf"
+  | "fund"
+  | "bond"
+  | "option"
+  | "cash"
+  | "future"
+  | "crypto"
+  | "other";
 
 export interface InvestmentPosition {
   id: string;
   connectorId: string;
   sourceId: string;
+  /** Stable per-source instrument/custody identity, excluding snapshot date. */
+  sourcePositionKey?: string;
   assetType: AssetType;
   symbol?: string;
   name: string;
-  quantity?: number;
-  marketValue?: number;
-  cashBalance?: number;
+  quantity?: number | null;
+  marketValue?: number | null;
+  cashBalance?: number | null;
   currency: string;
   asOfDate: string;
+  underlyingSymbol?: string;
+  expirationDate?: string;
+  strikePrice?: number;
+  optionRight?: "call" | "put";
+  contractMultiplier?: number;
+  contractSymbol?: string;
+  optionMarkPrice?: number;
+  economicSecurityId?: string;
+  observationCoverage?: "complete" | "subset";
+  investmentAccountId?: string;
   raw?: unknown;
 }
 
@@ -95,7 +116,7 @@ export interface InvestmentTransaction {
   brokerName?: string;
   symbol?: string;
   name?: string;
-  assetType?: AssetType | "bond" | "unknown";
+  assetType?: AssetType | "unknown";
   tradeDate?: string;
   postedDate?: string;
   transactionCode?: string;
@@ -104,6 +125,12 @@ export interface InvestmentTransaction {
   price?: number;
   amount?: number;
   currency: string;
+  underlyingSymbol?: string;
+  expirationDate?: string;
+  strikePrice?: number;
+  optionRight?: "call" | "put";
+  contractSymbol?: string;
+  externalContractId?: string;
   raw?: unknown;
 }
 

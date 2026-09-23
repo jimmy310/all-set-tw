@@ -177,8 +177,7 @@ function readTableDetails(schemaObjects) {
     );
 
     // index_info needs the index name as an argument, so generate one query
-    // per explicit index while still executing all metadata queries in one
-    // Wrangler process.
+    // per explicit index.
     for (const index of indexes.filter(
       (candidate) => candidate.table_name === table.name,
     )) {
@@ -190,7 +189,24 @@ function readTableDetails(schemaObjects) {
     }
   }
 
-  const metadataRows = runJsonQuery(statements.join(";\n"));
+  // Keep each --command safely below Windows' command-line length limit. The
+  // result is read-only and all calls target the same isolated local D1.
+  const queryLimit = 8_000;
+  const queryBatches = [];
+  let batch = [];
+  let batchLength = 0;
+  for (const statement of statements) {
+    const statementLength = statement.length + 2;
+    if (batch.length > 0 && batchLength + statementLength > queryLimit) {
+      queryBatches.push(batch.join(";\n"));
+      batch = [];
+      batchLength = 0;
+    }
+    batch.push(statement);
+    batchLength += statementLength;
+  }
+  if (batch.length > 0) queryBatches.push(batch.join(";\n"));
+  const metadataRows = queryBatches.flatMap(runJsonQuery);
   const detailsByTable = new Map(
     tables.map((table) => [
       table.name,

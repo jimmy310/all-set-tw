@@ -2,6 +2,62 @@ import { describe, expect, it } from "vitest";
 import { calculateAssetSummary } from "./summary";
 
 describe("calculateAssetSummary", () => {
+  it("uses the reconciled economic total for the Assets summary and balance sheet", () => {
+    const summary = calculateAssetSummary({
+      bank: { accounts: [], transactions: [] },
+      investments: [
+        {
+          id: "broker-complete",
+          assetType: "stock",
+          name: "2330",
+          marketValue: 8_000,
+          currency: "TWD",
+          asOfDate: "2026-09-23",
+          economicSecurityId: "security:2330",
+          observationCoverage: "complete",
+        },
+        {
+          id: "custody-subset",
+          assetType: "stock",
+          name: "2330 collateral",
+          marketValue: 5_000,
+          currency: "TWD",
+          asOfDate: "2026-09-23",
+          economicSecurityId: "security:2330",
+          observationCoverage: "subset",
+        },
+      ],
+      manualAssets: [],
+      rates: [],
+    });
+    expect(summary.investmentTotal).toBe(8_000);
+    expect(summary.investmentGrossAssets).toBe(8_000);
+    expect(summary.grossAssets).toBe(8_000);
+  });
+
+  it("reports investment net value separately from gross assets for short options", () => {
+    const summary = calculateAssetSummary({
+      bank: { accounts: [], transactions: [] },
+      investments: [
+        {
+          id: "short-call",
+          assetType: "option",
+          name: "TSM Call",
+          quantity: -1,
+          marketValue: -2_500,
+          currency: "TWD",
+          asOfDate: "2026-09-23",
+        },
+      ],
+      manualAssets: [],
+      rates: [],
+    });
+    expect(summary.investmentTotal).toBe(-2_500);
+    expect(summary.investmentGrossAssets).toBe(0);
+    expect(summary.totalLiabilities).toBe(2_500);
+    expect(summary.netWorth).toBe(-2_500);
+  });
+
   it("converts balances and groups accounts and cards by institution", () => {
     const summary = calculateAssetSummary({
       bank: {
@@ -98,7 +154,7 @@ describe("calculateAssetSummary", () => {
       rates: [],
     });
 
-    expect(summary.grossAssets).toBe(0);
+    expect(summary.grossAssets).toBeNull();
     expect(summary.missingCurrencies).toEqual(["JPY", "USD"]);
   });
 
@@ -166,6 +222,46 @@ describe("calculateAssetSummary", () => {
       rates: [],
     });
 
-    expect(summary.missingCurrencies).toEqual(["SGD"]);
+    expect(summary.missingCurrencies).toEqual(["CNY", "SGD"]);
+  });
+
+  it("includes mortgage and credit-card balances in the same Assets-page net worth", () => {
+    const summary = calculateAssetSummary({
+      bank: {
+        accounts: [
+          {
+            id: "card",
+            connectorId: "esun",
+            sourceId: "card",
+            accountType: "credit",
+            balance: -100_000,
+            currency: "TWD",
+          },
+        ],
+        transactions: [],
+      },
+      investments: [],
+      manualAssets: [
+        {
+          id: "home",
+          name: "House",
+          category: "real_estate",
+          note: null,
+          currency: "TWD",
+          createdAt: "2026-09-23",
+          value: 20_000_000,
+        },
+      ],
+      liabilities: [
+        {
+          liabilityType: "mortgage",
+          outstandingPrincipal: 6_000_000,
+          accruedInterest: 0,
+          currency: "TWD",
+        },
+      ],
+      rates: [],
+    });
+    expect(summary.netWorth).toBe(13_900_000);
   });
 });

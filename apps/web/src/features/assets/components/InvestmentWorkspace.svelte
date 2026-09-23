@@ -1,8 +1,13 @@
 <script lang="ts">
+  import { createQuery } from "@tanstack/svelte-query";
   import type {
     InvestmentRow,
     InvestmentTransactionRow,
   } from "@/data/investments/types";
+  import type { ApiClient } from "@/shared/api/client";
+  import ManualInvestments from "./ManualInvestments.svelte";
+  import { investmentAccountsQuery } from "@/data/investments/queries";
+  import { investmentPositionValue } from "../model/balance-sheet";
   import {
     formatCurrency,
     formatDate,
@@ -11,6 +16,7 @@
 
   let {
     positions,
+    api,
     trades,
     total,
     tradesPending = false,
@@ -18,14 +24,16 @@
     compact = false,
   }: {
     positions: InvestmentRow[];
+    api: ApiClient;
     trades: InvestmentTransactionRow[];
-    total: number;
+    total: number | null;
     tradesPending?: boolean;
     tradesError?: boolean;
     compact?: boolean;
   } = $props();
 
   let tab = $state<"holdings" | "transactions">("holdings");
+  const accounts = createQuery(investmentAccountsQuery(() => api));
 
   function tradeDisplay(trade: InvestmentTransactionRow) {
     if (trade.amount != null && trade.price != null && trade.price !== 1)
@@ -33,9 +41,27 @@
     if (trade.quantity != null) return `${formatNumber(trade.quantity)} 股`;
     return "金額未提供";
   }
+
+  function positionTitle(position: InvestmentRow) {
+    if (position.assetType !== "option")
+      return `${position.symbol ? `${position.symbol} ` : ""}${position.name}`;
+    const underlying =
+      position.underlyingSymbol ?? position.symbol ?? "標的未知";
+    const expiry = position.expirationDate ?? "到期日未知";
+    const strike =
+      position.strikePrice == null ? "履約價未知" : position.strikePrice;
+    const right =
+      position.optionRight === "call"
+        ? "Call"
+        : position.optionRight === "put"
+          ? "Put"
+          : "選擇權";
+    return `${underlying} ${expiry} ${strike} ${right}`;
+  }
 </script>
 
 <div class={compact ? "grid gap-3" : "flex min-h-full flex-col"}>
+  <div class={compact ? "px-0" : "px-5 pt-4"}><ManualInvestments {api} /></div>
   {#if !compact}
     <header class="border-b border-ink/10 px-5 py-4">
       <p class="text-caption font-medium text-subtle">投資</p>
@@ -44,9 +70,12 @@
     </header>
     <div class="grid grid-cols-2 gap-6 border-b border-ink/10 px-5 py-4">
       <div>
-        <p class="text-caption text-subtle">投資市值</p>
+        <p class="text-caption text-subtle">投資淨值</p>
         <p class="mt-2 text-lg font-medium tabular-nums text-steel">
-          {formatCurrency(total)}
+          {total == null ? "資料不完整" : formatCurrency(total)}
+        </p>
+        <p class="mt-1 text-caption text-subtle">
+          含衍生品負向公允價值；資產負債表將其列為負債
         </p>
       </div>
       <div>
@@ -91,18 +120,37 @@
             >
               <div class="min-w-0">
                 <p class="break-words text-sm font-semibold">
-                  {position.symbol ? `${position.symbol} ` : ""}{position.name}
+                  {positionTitle(position)}
                 </p>
                 <p class="mt-1 text-caption text-subtle">
-                  {position.assetType.toUpperCase()} · {position.currency} ·
-                  {formatNumber(position.quantity ?? 0)} 單位
+                  {position.assetType === "cash"
+                    ? position.cashBalance == null
+                      ? "現金餘額未知"
+                      : `${formatNumber(position.cashBalance)} ${position.currency} 現金`
+                    : position.assetType === "option"
+                      ? `${position.quantity == null ? "數量未知" : `${formatNumber(position.quantity)} 口`} · 乘數 ${position.contractMultiplier ?? 1}`
+                      : `${position.quantity == null ? "數量未知" : `${formatNumber(position.quantity)} 單位`}`}
+                  · {position.currency} · {position.asOfDate}
+                  {#if position.economicSecurityId}
+                    · 已連結來源（{position.observationCoverage === "subset"
+                      ? "子集"
+                      : "完整"}觀察）
+                  {/if}
+                  {#if position.investmentAccountId}
+                    <br />
+                    {($accounts.data ?? []).find(
+                      (account) => account.id === position.investmentAccountId,
+                    )?.displayName ?? "投資帳戶"}
+                  {/if}
                 </p>
               </div>
               <p class="text-right text-sm font-medium tabular-nums text-steel">
-                {formatCurrency(
-                  (position.marketValue ?? 0) + (position.cashBalance ?? 0),
-                  position.currency,
-                )}
+                {investmentPositionValue(position) == null
+                  ? "估值未知"
+                  : formatCurrency(
+                      investmentPositionValue(position)!,
+                      position.currency,
+                    )}
               </p>
             </div>
           {/each}

@@ -5,5 +5,6 @@ export * from "./classification";
 export * from "./settings";
 export * from "./notifications";
 export * from "./assets";
+export * from "./balance-sheet";
 export * from "./exchange-rates";
 export * from "./sync";

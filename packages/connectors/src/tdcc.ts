@@ -1143,6 +1143,12 @@ function toInvestmentPosition(
     ]
       .filter(Boolean)
       .join(":"),
+    sourcePositionKey: [
+      holding.accountId,
+      holding.symbol || holding.securityName,
+    ]
+      .filter(Boolean)
+      .join(":"),
     assetType:
       holding.securityType === "etf" || holding.securityType === "fund"
         ? holding.securityType

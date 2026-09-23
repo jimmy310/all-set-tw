@@ -83,7 +83,18 @@ function registerManualAssetRoutes(api: Hono<AppBindings>) {
   );
 
   api.delete("/manual-assets/:id", async (c) => {
-    await removeManualAsset(c.env.DB, c.req.param("id"));
+    const deleted = await removeManualAsset(c.env.DB, c.req.param("id"));
+    if (!deleted)
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "ASSET_IS_COLLATERAL",
+            message: "解除抵押連結後才能刪除此資產。",
+          },
+        },
+        409,
+      );
     return c.json({ success: true });
   });
 

@@ -11,6 +11,8 @@
     investmentTransactionsQuery,
   } from "@/data/investments/queries";
   import type { InvestmentTransactionRow } from "@/data/investments/types";
+  import ManualInvestments from "./components/ManualInvestments.svelte";
+  import { investmentPositionValue } from "./model/balance-sheet";
   import {
     formatCurrency,
     formatDate,
@@ -33,12 +35,19 @@
   const rateValues = $derived(rateMap($rates.data));
   const total = $derived(
     ($investments.data ?? []).reduce((s, p) => {
-      const value = (p.marketValue ?? 0) + (p.cashBalance ?? 0);
+      const value = investmentPositionValue(p) ?? 0;
       return (
         s +
         (p.currency === "TWD" ? value : value * (rateValues[p.currency] ?? 0))
       );
     }, 0),
+  );
+  const totalIncomplete = $derived(
+    positions.some(
+      (p) =>
+        investmentPositionValue(p) == null ||
+        (p.currency !== "TWD" && rateValues[p.currency] == null),
+    ),
   );
   const filteredTrades = $derived(
     ($trades.data ?? [])
@@ -69,12 +78,13 @@
   />
 {:else}
   <div class="grid min-w-0 gap-6">
+    <ManualInvestments {api} />
     <section class="min-w-0 pt-3 md:pt-2" aria-label="投資摘要">
       <p class="text-sm text-subtle">持倉市值</p>
       <p
         class="mt-3 break-all text-[clamp(2rem,7vw,2.75rem)] leading-tight font-semibold tracking-tight tabular-nums"
       >
-        {formatCurrency(total)}
+        {totalIncomplete ? "資料不完整" : formatCurrency(total)}
       </p>
       <div class="mt-5 grid grid-cols-2 gap-3 md:gap-6">
         <div class="min-w-0">
@@ -133,10 +143,9 @@
                     {p.quantity == null ? "-" : formatNumber(p.quantity)}
                   </td>
                   <td class="px-4 py-3 text-right font-semibold tabular-nums">
-                    {formatCurrency(
-                      (p.marketValue ?? 0) + (p.cashBalance ?? 0),
-                      p.currency,
-                    )}
+                    {investmentPositionValue(p) == null
+                      ? "估值未知"
+                      : formatCurrency(investmentPositionValue(p)!, p.currency)}
                   </td>
                   <td class="py-3 pl-4 text-caption text-subtle">
                     {formatDate(p.asOfDate)}
@@ -154,14 +163,13 @@
                   {p.symbol ? `${p.symbol} ` : ""}{p.name}
                 </p>
                 <p class="mt-1 text-caption text-subtle">
-                  {p.quantity ?? 0} 單位 · {p.assetType.toUpperCase()}
+                  {p.quantity == null ? "數量未知" : `${p.quantity} 單位`} · {p.assetType.toUpperCase()}
                 </p>
               </div>
               <p class="shrink-0 font-medium tabular-nums text-steel">
-                {formatCurrency(
-                  (p.marketValue ?? 0) + (p.cashBalance ?? 0),
-                  p.currency,
-                )}
+                {investmentPositionValue(p) == null
+                  ? "估值未知"
+                  : formatCurrency(investmentPositionValue(p)!, p.currency)}
               </p>
             </div>
           {/each}

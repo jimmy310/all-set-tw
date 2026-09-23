@@ -7,11 +7,18 @@ const migrationsDirectory = fileURLToPath(
   new URL("../migrations/", import.meta.url),
 );
 
-export function readMigrations() {
+export function readNamedMigrations() {
   return readdirSync(migrationsDirectory)
     .filter((name) => name.endsWith(".sql"))
     .sort()
-    .map((name) => readFileSync(`${migrationsDirectory}/${name}`, "utf8"));
+    .map((name) => ({
+      name,
+      sql: readFileSync(`${migrationsDirectory}/${name}`, "utf8"),
+    }));
+}
+
+export function readMigrations() {
+  return readNamedMigrations().map((migration) => migration.sql);
 }
 
 /** Isolated, in-memory workerd D1; never loads the project's remote bindings. */

@@ -215,12 +215,13 @@
     },
     "investment_positions": {
       "description": "投資帳戶在特定日期的持倉與資產市值快照。",
-      "notes": "同一 connector、source 與日期可有一組持倉；最新持倉與分頁查詢依 as_of_date。",
+      "notes": "來源部位事實與使用者 reconciliation overrides 分開保存。source_position_key 是不含快照日期的來源部位穩定識別；經濟持倉只以有效 economic_security_id 合併，不依 symbol 猜測。",
       "columns": {
         "id": "持倉快照的系統識別碼。",
         "connector_id": "產生此持倉的外部連接器識別碼。",
         "source_id": "外部來源系統提供的持倉識別碼。",
-        "asset_type": "資產類型，目前限制為 stock、etf 或 fund。",
+        "source_position_key": "來源端穩定持倉識別，不含快照日期；用於跨快照關聯使用者 reconciliation override。",
+        "asset_type": "資產類型，支援 stock、etf、fund、bond、option、cash、future、crypto 與 other。",
         "symbol": "證券、基金或 ETF 的代號。",
         "name": "投資標的名稱。",
         "quantity": "持有數量。",
@@ -230,7 +231,101 @@
         "as_of_date": "持倉快照所代表的日期。",
         "raw_payload": "連接器回傳的原始或正規化 JSON。",
         "created_at": "持倉首次寫入的時間。",
-        "updated_at": "持倉最後更新的時間。"
+        "updated_at": "持倉最後更新的時間。",
+        "investment_account_id": "可選的投資帳戶識別碼；舊來源資料保留 NULL。",
+        "custody_status": "持倉保管狀態；collateral 仍是資產。",
+        "average_cost": "來源提供時的每單位平均成本。",
+        "cost_basis": "來源提供時的成本基礎。",
+        "valuation_source": "估值來源標記；不代表未知估值為零。",
+        "underlying_symbol": "選擇權的標的代號。",
+        "expiration_date": "選擇權到期日。",
+        "strike_price": "選擇權履約價，保留小數精度。",
+        "option_right": "選擇權方向：call 或 put。",
+        "contract_multiplier": "每口合約代表的標的數量；調整型合約可使用非 100 乘數。",
+        "contract_symbol": "來源提供的完整合約代號。",
+        "option_mark_price": "來源或手動輸入的每單位選擇權標記價格。",
+        "economic_security_id": "使用者明確指定的跨來源經濟標的識別碼；不由股票代號推測。",
+        "observation_coverage": "完整持倉或部分／保管觀測；同一明確識別碼下完整觀測優先。"
+      }
+    },
+    "investment_reconciliation_overrides": {
+      "description": "使用者對投資來源持倉指定的經濟持倉與觀測範圍覆寫。",
+      "notes": "以 connector_id 與 source_position_key 跨快照識別來源持倉，不修改 connector-owned investment_positions；使用者覆寫優先於來源提供的 economic_security_id 與 observation_coverage。",
+      "columns": {
+        "connector_id": "持倉所屬來源 connector 識別碼。",
+        "source_position_key": "來源提供的穩定持倉識別，不含快照日期。",
+        "economic_security_id": "使用者明確設定的經濟持倉群組識別。",
+        "observation_coverage": "此來源對經濟持倉的觀測是 complete 或 subset。",
+        "created_at": "覆寫建立時間。",
+        "updated_at": "覆寫最後更新時間。"
+      }
+    },
+    "investment_accounts": {
+      "description": "券商、複委託或證券融資等投資帳戶識別。",
+      "notes": "僅保存遮罩帳號；舊 TDCC 資料不推測券商帳戶。",
+      "columns": {
+        "id": "系統內部投資帳戶識別碼。",
+        "connector_id": "建立此帳戶觀測的來源連接器。",
+        "source_id": "來源端帳戶識別碼。",
+        "provider": "券商或金融機構名稱。",
+        "account_type": "帳戶種類。",
+        "display_name": "使用者可辨識的顯示名稱。",
+        "masked_identity": "可選的遮罩帳戶識別。",
+        "currency": "帳戶原生幣別。",
+        "market": "市場或國家代碼。",
+        "created_at": "建立時間。",
+        "updated_at": "更新時間。"
+      }
+    },
+    "liability_accounts": {
+      "description": "貸款、融資、房貸及其他負債的帳戶主檔。",
+      "notes": "手動帳戶不保存 connector/source；即時餘額存於快照，NULL 表示未知。",
+      "columns": {
+        "id": "負債帳戶系統識別碼。",
+        "source_type": "資料來源種類。",
+        "connector_id": "連接器識別碼。",
+        "source_id": "來源端帳戶識別碼。",
+        "liability_type": "負債種類。",
+        "provider": "貸款機構或債權人。",
+        "name": "顯示名稱。",
+        "masked_identity": "遮罩帳戶識別。",
+        "currency": "負債原生幣別。",
+        "original_principal": "原始本金；未提供時為 NULL。",
+        "interest_rate": "利率；未提供時為 NULL。",
+        "interest_rate_type": "固定、浮動或未知。",
+        "start_date": "起始日期。",
+        "maturity_date": "到期日。",
+        "monthly_payment": "每月付款金額。",
+        "next_payment_date": "下次付款日期。",
+        "created_at": "建立時間。",
+        "updated_at": "更新時間。"
+      }
+    },
+    "liability_balance_snapshots": {
+      "description": "負債帳戶在特定時間的本金與應計利息觀測。",
+      "notes": "outstanding_principal 為 NULL 時代表餘額未知，而非零。",
+      "columns": {
+        "id": "負債餘額觀測識別碼。",
+        "liability_account_id": "所屬負債帳戶。",
+        "outstanding_principal": "未償本金；NULL 代表來源未知。",
+        "accrued_interest": "可靠取得時保存的應計利息。",
+        "as_of_at": "觀測時間。",
+        "source": "manual、connector 或 reconstructed。",
+        "created_at": "寫入時間。"
+      }
+    },
+    "collateral_relationships": {
+      "description": "負債與擔保資產間的明確關係。",
+      "notes": "擔保品仍屬資產；擔保關係本身不列為負債。",
+      "columns": {
+        "id": "擔保關係識別碼。",
+        "liability_account_id": "受擔保的負債帳戶。",
+        "asset_type": "擔保資產種類。",
+        "asset_id": "擔保資產識別碼。",
+        "collateral_value": "來源提供時的擔保價值。",
+        "currency": "擔保價值幣別。",
+        "created_at": "建立時間。",
+        "updated_at": "更新時間。"
       }
     },
     "investment_transactions": {
@@ -246,7 +341,7 @@
         "broker_name": "券商或交易機構名稱。",
         "symbol": "交易標的代號。",
         "name": "交易標的名稱。",
-        "asset_type": "資產類型，例如 stock、etf、fund、bond 或 unknown。",
+        "asset_type": "資產類型，支援 stock、etf、fund、bond、option、cash、future、crypto、other 或 unknown。",
         "trade_date": "交易發生日期。",
         "posted_date": "交易正式入帳日期。",
         "transaction_code": "外部系統的交易類型代碼。",
@@ -258,7 +353,13 @@
         "raw_payload": "連接器回傳的原始或正規化 JSON。",
         "created_at": "交易首次寫入的時間。",
         "updated_at": "交易最後更新的時間。",
-        "effective_date": "由 trade_date 優先、posted_date 備援產生的排序日期。"
+        "effective_date": "由 trade_date 優先、posted_date 備援產生的排序日期。",
+        "underlying_symbol": "選擇權交易的標的代號。",
+        "expiration_date": "選擇權合約到期日。",
+        "strike_price": "選擇權履約價。",
+        "option_right": "選擇權方向：call 或 put。",
+        "contract_symbol": "外部來源提供的完整選擇權合約代號。",
+        "external_contract_id": "來源端選擇權合約識別碼。"
       }
     },
     "invoice_line_items": {
