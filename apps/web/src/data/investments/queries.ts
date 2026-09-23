@@ -3,7 +3,11 @@ import type { CreateQueryOptions } from "@tanstack/svelte-query";
 import type { ApiClient } from "@/shared/api/client";
 import { queryKeys } from "@/shared/api/query-keys";
 import type { MonthRange } from "@/shared/date-range";
-import type { InvestmentRow, InvestmentTransactionRow } from "./types";
+import type {
+  InvestmentAccountRow,
+  InvestmentRow,
+  InvestmentTransactionRow,
+} from "./types";
 
 type ApiProvider = () => ApiClient;
 
@@ -11,6 +15,13 @@ export const investmentsQuery = (getApi: ApiProvider) =>
   queryOptions({
     queryKey: queryKeys.investments,
     queryFn: () => getApi().get<InvestmentRow[]>("/api/investments"),
+  });
+
+export const investmentAccountsQuery = (getApi: ApiProvider) =>
+  queryOptions({
+    queryKey: queryKeys.investmentAccounts,
+    queryFn: () =>
+      getApi().get<InvestmentAccountRow[]>("/api/investment-accounts"),
   });
 
 export const investmentTransactionsRangeQuery = (

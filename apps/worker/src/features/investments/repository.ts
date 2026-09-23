@@ -2,6 +2,7 @@ import {
   createDrizzle,
   investmentPositions,
   investmentTransactions,
+  investmentAccounts,
 } from "@taiwan-fin-hub/db";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type { MonthDateRange } from "../../platform/month-range";
@@ -70,6 +71,8 @@ export async function listLatestInvestmentPositions(
       cashBalance: investmentPositions.cashBalance,
       currency: investmentPositions.currency,
       asOfDate: investmentPositions.asOfDate,
+      investmentAccountId: investmentPositions.investmentAccountId,
+      custodyStatus: investmentPositions.custodyStatus,
     })
     .from(investmentPositions)
     .where(
@@ -104,6 +107,89 @@ export async function listLatestInvestmentPositions(
     )
     .limit(limit)
     .all();
+}
+
+export function listInvestmentAccounts(db: D1Database) {
+  return createDrizzle(db)
+    .select({
+      id: investmentAccounts.id,
+      provider: investmentAccounts.provider,
+      accountType: investmentAccounts.accountType,
+      displayName: investmentAccounts.displayName,
+      maskedIdentity: investmentAccounts.maskedIdentity,
+      currency: investmentAccounts.currency,
+      market: investmentAccounts.market,
+    })
+    .from(investmentAccounts)
+    .orderBy(asc(investmentAccounts.displayName), asc(investmentAccounts.id))
+    .all();
+}
+
+export async function createManualInvestmentAccount(
+  db: D1Database,
+  input: {
+    id: string;
+    provider: string;
+    accountType: string;
+    displayName: string;
+    maskedIdentity: string | null;
+    currency: string;
+    market: string | null;
+    now: string;
+  },
+) {
+  await createDrizzle(db).insert(investmentAccounts).values({
+    id: input.id,
+    connectorId: "manual",
+    sourceId: input.id,
+    provider: input.provider,
+    accountType: input.accountType,
+    displayName: input.displayName,
+    maskedIdentity: input.maskedIdentity,
+    currency: input.currency,
+    market: input.market,
+    createdAt: input.now,
+    updatedAt: input.now,
+  });
+}
+
+export async function createManualInvestmentPosition(
+  db: D1Database,
+  input: {
+    id: string;
+    accountId: string;
+    assetType: string;
+    symbol: string | null;
+    name: string;
+    quantity: number | null;
+    marketValue: number | null;
+    currency: string;
+    averageCost: number | null;
+    costBasis: number | null;
+    custodyStatus: string;
+    asOfDate: string;
+    now: string;
+  },
+) {
+  await createDrizzle(db).insert(investmentPositions).values({
+    id: input.id,
+    connectorId: "manual",
+    sourceId: input.id,
+    investmentAccountId: input.accountId,
+    assetType: input.assetType,
+    symbol: input.symbol,
+    name: input.name,
+    quantity: input.quantity,
+    marketValue: input.marketValue,
+    currency: input.currency,
+    asOfDate: input.asOfDate,
+    averageCost: input.averageCost,
+    costBasis: input.costBasis,
+    custodyStatus: input.custodyStatus,
+    valuationSource: "manual",
+    createdAt: input.now,
+    updatedAt: input.now,
+  });
 }
 
 export async function listInvestmentTransactions(

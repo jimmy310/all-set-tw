@@ -28,6 +28,7 @@
     formatDate,
     todayStr,
   } from "@/shared/format/financial";
+  import Liabilities from "./components/Liabilities.svelte";
 
   let {
     api,
@@ -612,3 +613,4 @@
       </div>{/if}
   </div>
 {/if}
+<Liabilities {api} />

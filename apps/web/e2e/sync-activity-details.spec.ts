@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 for (const width of [1440, 390]) {
   test(`overview sync details expand lazily without overflow at ${width}px`, async ({
     page,
-  }) => {
+  }, testInfo) => {
     await page.setViewportSize({ width, height: 1000 });
     let requests = 0;
     let activitiesPath = "";
@@ -107,7 +107,7 @@ for (const width of [1440, 390]) {
       .getByText("最近一次排程同步", { exact: true })
       .scrollIntoViewIfNeeded();
     await page.screenshot({
-      path: `/tmp/sync-details-${width}.png`,
+      path: testInfo.outputPath(`sync-details-${width}.png`),
       fullPage: true,
     });
     await page.getByText("收合各資料來源", { exact: true }).click();

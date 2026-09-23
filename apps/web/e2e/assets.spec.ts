@@ -116,6 +116,7 @@ test.beforeEach(async ({ page }) => {
           asOfDate: "2026-08-08",
         },
       ];
+    else if (path === "/api/investment-accounts") body = [];
     else if (path === "/api/investment-transactions")
       body = [
         {
@@ -133,6 +134,7 @@ test.beforeEach(async ({ page }) => {
       ];
     else if (path === "/api/manual-assets" && method === "GET")
       body = manualAssets;
+    else if (path === "/api/liabilities") body = [];
     else if (path === "/api/manual-assets" && method === "POST") {
       const input = route.request().postDataJSON();
       const id = `manual-${manualAssets.length + 1}`;
@@ -272,7 +274,7 @@ test("keeps the mobile ledger readable and expandable", async ({ page }) => {
 for (const width of [1280, 390, 320]) {
   test(`shows time deposit dates separately from sync time at ${width}px`, async ({
     page,
-  }) => {
+  }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await page.route("**/api/bank", (route) =>
       route.fulfill({
@@ -323,7 +325,7 @@ for (const width of [1280, 390, 320]) {
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBe(width);
     await page.screenshot({
-      path: `/tmp/obank-assets-${width}.png`,
+      path: testInfo.outputPath(`obank-assets-${width}.png`),
       fullPage: true,
     });
   });

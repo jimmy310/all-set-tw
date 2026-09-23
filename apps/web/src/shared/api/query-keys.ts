@@ -7,6 +7,7 @@ export const queryKeys = {
   billsRange: (from: string, to: string) =>
     ["creditCardBills", "range", from, to] as const,
   investments: ["investments"] as const,
+  investmentAccounts: ["investmentAccounts"] as const,
   investmentTransactions: ["investment-transactions"] as const,
   investmentTransactionsRange: (from: string, to: string) =>
     ["investment-transactions", "range", from, to] as const,
@@ -17,6 +18,7 @@ export const queryKeys = {
     ["invoices", "detail", invoiceId] as const,
   invoiceTransactionMappings: ["invoice-transaction-mappings"] as const,
   manualAssets: ["manualAssets"] as const,
+  liabilities: ["liabilities"] as const,
   exchangeRates: ["exchange-rates"] as const,
   netWorthHistory: ["netWorthHistory"] as const,
   syncJobs: ["sync-jobs"] as const,

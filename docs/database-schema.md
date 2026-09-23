@@ -8,10 +8,10 @@
 
 ## 目錄
 
-- Tables：31
-- Explicit indexes：44
+- Tables：35
+- Explicit indexes：49
 - Other objects：0
-- Migrations：45
+- Migrations：46
 
 ## Tables
 
@@ -24,16 +24,20 @@
 | [`classification_categories`](#classification_categories) | 交易與發票使用的分類字典，包含系統預設分類與使用者分類。 | 6 | 0 | 1 |
 | [`classification_overrides`](#classification_overrides) | 使用者對單筆目標資料指定的分類覆寫。 | 6 | 1 | 1 |
 | [`classification_rules`](#classification_rules) | 以文字條件自動判斷交易或其他資料分類的規則。 | 14 | 1 | 2 |
+| [`collateral_relationships`](#collateral_relationships) | 負債與擔保資產間的明確關係。 | 8 | 1 | 1 |
 | [`connector_settings`](#connector_settings) | 每個外部金融資料連接器的認證設定、公開設定與同步游標。 | 7 | 0 | 0 |
 | [`credit_card_bills`](#credit_card_bills) | 信用卡依帳單週期整理的帳單主檔。 | 15 | 1 | 2 |
 | [`einvoice_sync_run_items`](#einvoice_sync_run_items) | 電子發票持久化同步中，每張發票的明細擷取工作與待寫入資料。 | 17 | 1 | 1 |
 | [`einvoice_sync_runs`](#einvoice_sync_runs) | 電子發票跨 Queue invocation 執行的持久化同步記錄。 | 21 | 2 | 2 |
 | [`exchange_rates`](#exchange_rates) | 將外幣換算為新台幣時使用的最新匯率。 | 3 | 0 | 0 |
-| [`investment_positions`](#investment_positions) | 投資帳戶在特定日期的持倉與資產市值快照。 | 14 | 0 | 4 |
+| [`investment_accounts`](#investment_accounts) | 券商、複委託或證券融資等投資帳戶識別。 | 11 | 0 | 1 |
+| [`investment_positions`](#investment_positions) | 投資帳戶在特定日期的持倉與資產市值快照。 | 19 | 1 | 5 |
 | [`investment_transactions`](#investment_transactions) | 投資帳戶的買賣、配息或其他證券交易明細。 | 22 | 0 | 3 |
 | [`invoice_line_items`](#invoice_line_items) | 電子發票底下的商品或服務明細。 | 13 | 1 | 2 |
 | [`invoice_transaction_preferences`](#invoice_transaction_preferences) | 使用者對電子發票與銀行交易是否關聯的決策。 | 5 | 2 | 2 |
 | [`invoices`](#invoices) | 電子發票的抬頭與總額主檔。 | 10 | 0 | 2 |
+| [`liability_accounts`](#liability_accounts) | 貸款、融資、房貸及其他負債的帳戶主檔。 | 18 | 0 | 1 |
+| [`liability_balance_snapshots`](#liability_balance_snapshots) | 負債帳戶在特定時間的本金與應計利息觀測。 | 7 | 1 | 1 |
 | [`manual_assets`](#manual_assets) | 使用者手動登錄、無法由銀行或投資連接器同步的資產。 | 6 | 0 | 0 |
 | [`net_worth_history`](#net_worth_history) | 按日期保存的淨資產或資產類別歷史數值，用於圖表與歷史查詢。 | 6 | 0 | 2 |
 | [`notification_preferences`](#notification_preferences) | 此單一部署的同步推播偏好設定。 | 5 | 0 | 0 |
@@ -86,7 +90,7 @@
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
-| `idx_bank_accounts_match` | 否 | 否 | `bank_code`, `account_last4`, `currency` | `CREATE INDEX idx_bank_accounts_match<br>  ON bank_accounts (bank_code, account_last4, currency)` |
+| `idx_bank_accounts_match` | 否 | 否 | `bank_code`, `account_last4`, `currency` | `CREATE INDEX idx_bank_accounts_match<br>  ON bank_accounts (bank_code, account_last4, currency)` |
 
 #### DDL
 
@@ -148,8 +152,8 @@ CREATE TABLE "bank_accounts" (
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
-| `idx_bank_balance_snapshots_account_as_of` | 否 | 否 | `account_id`, `as_of_at` | `CREATE INDEX idx_bank_balance_snapshots_account_as_of<br>  ON bank_balance_snapshots (account_id, as_of_at)` |
-| `idx_bank_balance_snapshots_as_of` | 否 | 否 | `as_of_at` | `CREATE INDEX idx_bank_balance_snapshots_as_of<br>  ON bank_balance_snapshots (as_of_at)` |
+| `idx_bank_balance_snapshots_account_as_of` | 否 | 否 | `account_id`, `as_of_at` | `CREATE INDEX idx_bank_balance_snapshots_account_as_of<br>  ON bank_balance_snapshots (account_id, as_of_at)` |
+| `idx_bank_balance_snapshots_as_of` | 否 | 否 | `as_of_at` | `CREATE INDEX idx_bank_balance_snapshots_as_of<br>  ON bank_balance_snapshots (as_of_at)` |
 
 #### DDL
 
@@ -198,7 +202,7 @@ CREATE TABLE "bank_balance_snapshots" (
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
-| `idx_bank_transaction_preferences_excluded` | 否 | 否 | `excluded_from_calculation` | `CREATE INDEX idx_bank_transaction_preferences_excluded<br>  ON bank_transaction_preferences (excluded_from_calculation)` |
+| `idx_bank_transaction_preferences_excluded` | 否 | 否 | `excluded_from_calculation` | `CREATE INDEX idx_bank_transaction_preferences_excluded<br>  ON bank_transaction_preferences (excluded_from_calculation)` |
 
 #### DDL
 
@@ -251,12 +255,12 @@ CREATE TABLE "bank_transaction_preferences" (
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
 | `idx_bank_transactions_transfer_peer` | 否 | 否 | `transfer_peer_id` | `CREATE INDEX idx_bank_transactions_transfer_peer ON bank_transactions (transfer_peer_id)` |
-| `idx_bank_transactions_account_posted_date` | 否 | 否 | `account_id`, `posted_date` | `CREATE INDEX idx_bank_transactions_account_posted_date<br>  ON bank_transactions (account_id, posted_date)` |
-| `idx_bank_transactions_posted_date` | 否 | 否 | `posted_date` | `CREATE INDEX idx_bank_transactions_posted_date<br>  ON bank_transactions (posted_date)` |
-| `idx_bank_transactions_effective_updated` | 否 | 否 | `effective_date`, `updated_at`, `id` | `CREATE INDEX idx_bank_transactions_effective_updated<br>  ON bank_transactions (effective_date DESC, updated_at DESC, id DESC)` |
-| `idx_bank_transactions_status` | 否 | 否 | `connector_id`, `account_id`, `status` | `CREATE INDEX idx_bank_transactions_status<br>  ON bank_transactions (connector_id, account_id, status)` |
-| `idx_bank_transactions_transaction_day` | 否 | 否 | — | `CREATE INDEX idx_bank_transactions_transaction_day<br>  ON bank_transactions (<br>    CASE<br>      WHEN length(authorized_at) > 10<br>        THEN COALESCE(<br>          date(authorized_at, '+8 hours'),<br>          substr(authorized_at, 1, 10)<br>        )<br>      ELSE substr(COALESCE(authorized_at, posted_date), 1, 10)<br>    END<br>  )` |
-| `idx_bank_transactions_matched_transaction` | 是 | 是 | `matched_transaction_id` | `CREATE UNIQUE INDEX idx_bank_transactions_matched_transaction<br>  ON bank_transactions(matched_transaction_id)<br>  WHERE matched_transaction_id IS NOT NULL` |
+| `idx_bank_transactions_account_posted_date` | 否 | 否 | `account_id`, `posted_date` | `CREATE INDEX idx_bank_transactions_account_posted_date<br>  ON bank_transactions (account_id, posted_date)` |
+| `idx_bank_transactions_posted_date` | 否 | 否 | `posted_date` | `CREATE INDEX idx_bank_transactions_posted_date<br>  ON bank_transactions (posted_date)` |
+| `idx_bank_transactions_effective_updated` | 否 | 否 | `effective_date`, `updated_at`, `id` | `CREATE INDEX idx_bank_transactions_effective_updated<br>  ON bank_transactions (effective_date DESC, updated_at DESC, id DESC)` |
+| `idx_bank_transactions_status` | 否 | 否 | `connector_id`, `account_id`, `status` | `CREATE INDEX idx_bank_transactions_status<br>  ON bank_transactions (connector_id, account_id, status)` |
+| `idx_bank_transactions_transaction_day` | 否 | 否 | — | `CREATE INDEX idx_bank_transactions_transaction_day<br>  ON bank_transactions (<br>    CASE<br>      WHEN length(authorized_at) > 10<br>        THEN COALESCE(<br>          date(authorized_at, '+8 hours'),<br>          substr(authorized_at, 1, 10)<br>        )<br>      ELSE substr(COALESCE(authorized_at, posted_date), 1, 10)<br>    END<br>  )` |
+| `idx_bank_transactions_matched_transaction` | 是 | 是 | `matched_transaction_id` | `CREATE UNIQUE INDEX idx_bank_transactions_matched_transaction<br>  ON bank_transactions(matched_transaction_id)<br>  WHERE matched_transaction_id IS NOT NULL` |
 
 #### DDL
 
@@ -306,7 +310,7 @@ CREATE TABLE "bank_transactions" (
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
-| `idx_classification_categories_label_nocase` | 是 | 否 | `label` | `CREATE UNIQUE INDEX idx_classification_categories_label_nocase<br>  ON classification_categories (label COLLATE NOCASE)` |
+| `idx_classification_categories_label_nocase` | 是 | 否 | `label` | `CREATE UNIQUE INDEX idx_classification_categories_label_nocase<br>  ON classification_categories (label COLLATE NOCASE)` |
 
 #### DDL
 
@@ -347,7 +351,7 @@ CREATE TABLE "classification_categories" (
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
-| `idx_classification_overrides_category` | 否 | 否 | `category_id` | `CREATE INDEX idx_classification_overrides_category<br>  ON classification_overrides (category_id)` |
+| `idx_classification_overrides_category` | 否 | 否 | `category_id` | `CREATE INDEX idx_classification_overrides_category<br>  ON classification_overrides (category_id)` |
 
 #### DDL
 
@@ -397,8 +401,8 @@ CREATE TABLE "classification_overrides" (
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
-| `idx_classification_rules_enabled_priority` | 否 | 否 | `enabled`, `target_type`, `priority` | `CREATE INDEX idx_classification_rules_enabled_priority<br>  ON classification_rules (enabled, target_type, priority)` |
-| `idx_classification_rules_category` | 否 | 否 | `category_id` | `CREATE INDEX idx_classification_rules_category<br>  ON classification_rules (category_id)` |
+| `idx_classification_rules_enabled_priority` | 否 | 否 | `enabled`, `target_type`, `priority` | `CREATE INDEX idx_classification_rules_enabled_priority<br>  ON classification_rules (enabled, target_type, priority)` |
+| `idx_classification_rules_category` | 否 | 否 | `category_id` | `CREATE INDEX idx_classification_rules_category<br>  ON classification_rules (category_id)` |
 
 #### DDL
 
@@ -419,6 +423,52 @@ CREATE TABLE "classification_rules" (
   updated_at TEXT NOT NULL
 , excluded_from_calculation INTEGER NOT NULL DEFAULT 0
 CHECK (excluded_from_calculation IN (0, 1)))
+```
+
+### `collateral_relationships`
+
+> 用途：負債與擔保資產間的明確關係。
+> 注意：擔保品仍屬資產；擔保關係本身不列為負債。
+
+#### Columns
+
+| 順序 | 欄位 | 意義 | SQLite type | 可為 NULL | 預設值 | PK 順序 | Generated |
+| ---: | --- | --- | --- | :---: | --- | ---: | --- |
+| 1 | `id` | 擔保關係識別碼。 | TEXT | NO | — | 1 | — |
+| 2 | `liability_account_id` | 受擔保的負債帳戶。 | TEXT | NO | — | — | — |
+| 3 | `asset_type` | 擔保資產種類。 | TEXT | NO | — | — | — |
+| 4 | `asset_id` | 擔保資產識別碼。 | TEXT | NO | — | — | — |
+| 5 | `collateral_value` | 來源提供時的擔保價值。 | INTEGER | YES | — | — | — |
+| 6 | `currency` | 擔保價值幣別。 | TEXT | NO | 'TWD' | — | — |
+| 7 | `created_at` | 建立時間。 | TEXT | NO | — | — | — |
+| 8 | `updated_at` | 更新時間。 | TEXT | NO | — | — | — |
+
+#### Foreign keys
+
+| 欄位 | 參照表 | 參照欄位 | ON UPDATE | ON DELETE |
+| --- | --- | --- | --- | --- |
+| `liability_account_id` | `liability_accounts` | `id` | NO ACTION | CASCADE |
+
+#### Indexes
+
+| Index | Unique | Partial | 欄位 | 定義 |
+| --- | :---: | :---: | --- | --- |
+| `idx_collateral_relationships_asset` | 否 | 否 | `asset_type`, `asset_id` | `CREATE INDEX idx_collateral_relationships_asset ON collateral_relationships (asset_type, asset_id)` |
+
+#### DDL
+
+```sql
+CREATE TABLE collateral_relationships (
+  id TEXT NOT NULL PRIMARY KEY,
+  liability_account_id TEXT NOT NULL REFERENCES liability_accounts(id) ON DELETE CASCADE,
+  asset_type TEXT NOT NULL CHECK (asset_type IN ('investment_position', 'manual_asset', 'bank_account', 'other')),
+  asset_id TEXT NOT NULL,
+  collateral_value INTEGER,
+  currency TEXT NOT NULL DEFAULT 'TWD',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (liability_account_id, asset_type, asset_id)
+)
 ```
 
 ### `connector_settings`
@@ -495,8 +545,8 @@ CREATE TABLE "connector_settings" (
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
-| `idx_credit_card_bills_account_period` | 否 | 否 | `account_id`, `billing_period` | `CREATE INDEX idx_credit_card_bills_account_period<br>  ON credit_card_bills (account_id, billing_period)` |
-| `idx_credit_card_bills_page` | 否 | 否 | `billing_period`, `account_id`, `id` | `CREATE INDEX idx_credit_card_bills_page<br>  ON credit_card_bills (billing_period DESC, account_id ASC, id ASC)` |
+| `idx_credit_card_bills_account_period` | 否 | 否 | `account_id`, `billing_period` | `CREATE INDEX idx_credit_card_bills_account_period<br>  ON credit_card_bills (account_id, billing_period)` |
+| `idx_credit_card_bills_page` | 否 | 否 | `billing_period`, `account_id`, `id` | `CREATE INDEX idx_credit_card_bills_page<br>  ON credit_card_bills (billing_period DESC, account_id ASC, id ASC)` |
 
 #### DDL
 
@@ -558,7 +608,7 @@ CREATE TABLE "credit_card_bills" (
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
-| `idx_einvoice_sync_run_items_claim` | 否 | 否 | `run_id`, `status`, `lease_expires_at`, `created_at` | `CREATE INDEX idx_einvoice_sync_run_items_claim<br>  ON einvoice_sync_run_items (run_id, status, lease_expires_at, created_at)` |
+| `idx_einvoice_sync_run_items_claim` | 否 | 否 | `run_id`, `status`, `lease_expires_at`, `created_at` | `CREATE INDEX idx_einvoice_sync_run_items_claim<br>  ON einvoice_sync_run_items (run_id, status, lease_expires_at, created_at)` |
 
 #### DDL
 
@@ -627,8 +677,8 @@ CREATE TABLE "einvoice_sync_run_items" (
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
-| `idx_einvoice_sync_runs_one_active` | 是 | 是 | `connector_id` | `CREATE UNIQUE INDEX idx_einvoice_sync_runs_one_active<br>  ON einvoice_sync_runs (connector_id)<br>  WHERE status IN ('queued', 'initializing', 'processing')` |
-| `idx_einvoice_sync_runs_completed` | 否 | 否 | `completed_at` | `CREATE INDEX idx_einvoice_sync_runs_completed<br>  ON einvoice_sync_runs (completed_at DESC)` |
+| `idx_einvoice_sync_runs_one_active` | 是 | 是 | `connector_id` | `CREATE UNIQUE INDEX idx_einvoice_sync_runs_one_active<br>  ON einvoice_sync_runs (connector_id)<br>  WHERE status IN ('queued', 'initializing', 'processing')` |
+| `idx_einvoice_sync_runs_completed` | 否 | 否 | `completed_at` | `CREATE INDEX idx_einvoice_sync_runs_completed<br>  ON einvoice_sync_runs (completed_at DESC)` |
 
 #### DDL
 
@@ -692,6 +742,56 @@ CREATE TABLE "exchange_rates" (
 )
 ```
 
+### `investment_accounts`
+
+> 用途：券商、複委託或證券融資等投資帳戶識別。
+> 注意：僅保存遮罩帳號；舊 TDCC 資料不推測券商帳戶。
+
+#### Columns
+
+| 順序 | 欄位 | 意義 | SQLite type | 可為 NULL | 預設值 | PK 順序 | Generated |
+| ---: | --- | --- | --- | :---: | --- | ---: | --- |
+| 1 | `id` | 系統內部投資帳戶識別碼。 | TEXT | NO | — | 1 | — |
+| 2 | `connector_id` | 建立此帳戶觀測的來源連接器。 | TEXT | NO | — | — | — |
+| 3 | `source_id` | 來源端帳戶識別碼。 | TEXT | NO | — | — | — |
+| 4 | `provider` | 券商或金融機構名稱。 | TEXT | NO | — | — | — |
+| 5 | `account_type` | 帳戶種類。 | TEXT | NO | — | — | — |
+| 6 | `display_name` | 使用者可辨識的顯示名稱。 | TEXT | NO | — | — | — |
+| 7 | `masked_identity` | 可選的遮罩帳戶識別。 | TEXT | YES | — | — | — |
+| 8 | `currency` | 帳戶原生幣別。 | TEXT | NO | 'TWD' | — | — |
+| 9 | `market` | 市場或國家代碼。 | TEXT | YES | — | — | — |
+| 10 | `created_at` | 建立時間。 | TEXT | NO | — | — | — |
+| 11 | `updated_at` | 更新時間。 | TEXT | NO | — | — | — |
+
+#### Foreign keys
+
+—
+
+#### Indexes
+
+| Index | Unique | Partial | 欄位 | 定義 |
+| --- | :---: | :---: | --- | --- |
+| `idx_investment_accounts_provider` | 否 | 否 | `provider`, `account_type` | `CREATE INDEX idx_investment_accounts_provider ON investment_accounts (provider, account_type)` |
+
+#### DDL
+
+```sql
+CREATE TABLE investment_accounts (
+  id TEXT NOT NULL PRIMARY KEY,
+  connector_id TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  account_type TEXT NOT NULL CHECK (account_type IN ('brokerage', 'sub_brokerage', 'securities_finance', 'other')),
+  display_name TEXT NOT NULL,
+  masked_identity TEXT,
+  currency TEXT NOT NULL DEFAULT 'TWD',
+  market TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (connector_id, source_id)
+)
+```
+
 ### `investment_positions`
 
 > 用途：投資帳戶在特定日期的持倉與資產市值快照。
@@ -704,7 +804,7 @@ CREATE TABLE "exchange_rates" (
 | 1 | `id` | 持倉快照的系統識別碼。 | TEXT | NO | — | 1 | — |
 | 2 | `connector_id` | 產生此持倉的外部連接器識別碼。 | TEXT | NO | — | — | — |
 | 3 | `source_id` | 外部來源系統提供的持倉識別碼。 | TEXT | NO | — | — | — |
-| 4 | `asset_type` | 資產類型，目前限制為 stock、etf 或 fund。 | TEXT | NO | — | — | — |
+| 4 | `asset_type` | 資產類型，支援 stock、etf、fund、bond、option、cash、future、crypto 與 other。 | TEXT | NO | — | — | — |
 | 5 | `symbol` | 證券、基金或 ETF 的代號。 | TEXT | YES | — | — | — |
 | 6 | `name` | 投資標的名稱。 | TEXT | NO | — | — | — |
 | 7 | `quantity` | 持有數量。 | REAL | YES | — | — | — |
@@ -715,17 +815,25 @@ CREATE TABLE "exchange_rates" (
 | 12 | `raw_payload` | 連接器回傳的原始或正規化 JSON。 | TEXT | YES | — | — | — |
 | 13 | `created_at` | 持倉首次寫入的時間。 | TEXT | NO | — | — | — |
 | 14 | `updated_at` | 持倉最後更新的時間。 | TEXT | NO | — | — | — |
+| 15 | `investment_account_id` | 可選的投資帳戶識別碼；舊來源資料保留 NULL。 | TEXT | YES | — | — | — |
+| 16 | `custody_status` | 持倉保管狀態；collateral 仍是資產。 | TEXT | NO | 'free' | — | — |
+| 17 | `average_cost` | 來源提供時的每單位平均成本。 | REAL | YES | — | — | — |
+| 18 | `cost_basis` | 來源提供時的成本基礎。 | INTEGER | YES | — | — | — |
+| 19 | `valuation_source` | 估值來源標記；不代表未知估值為零。 | TEXT | NO | 'source' | — | — |
 
 #### Foreign keys
 
-—
+| 欄位 | 參照表 | 參照欄位 | ON UPDATE | ON DELETE |
+| --- | --- | --- | --- | --- |
+| `investment_account_id` | `investment_accounts` | `id` | NO ACTION | SET NULL |
 
 #### Indexes
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
-| `idx_investment_positions_as_of_date` | 否 | 否 | `as_of_date` | `CREATE INDEX idx_investment_positions_as_of_date<br>  ON investment_positions (as_of_date)` |
-| `idx_investment_positions_asset_type` | 否 | 否 | `asset_type` | `CREATE INDEX idx_investment_positions_asset_type<br>  ON investment_positions (asset_type)` |
+| `idx_investment_positions_account_date` | 否 | 否 | `investment_account_id`, `as_of_date` | `CREATE INDEX idx_investment_positions_account_date ON investment_positions (investment_account_id, as_of_date DESC)` |
+| `idx_investment_positions_as_of_date` | 否 | 否 | `as_of_date` | `CREATE INDEX idx_investment_positions_as_of_date ON investment_positions (as_of_date)` |
+| `idx_investment_positions_asset_type` | 否 | 否 | `asset_type` | `CREATE INDEX idx_investment_positions_asset_type ON investment_positions (asset_type)` |
 | `idx_investment_positions_latest_scope` | 否 | 否 | `connector_id`, `asset_type`, `as_of_date` | `CREATE INDEX idx_investment_positions_latest_scope<br>  ON investment_positions (connector_id, asset_type, as_of_date DESC)` |
 | `idx_investment_positions_page` | 否 | 否 | `as_of_date`, `asset_type`, `name`, `id` | `CREATE INDEX idx_investment_positions_page<br>  ON investment_positions (as_of_date DESC, asset_type ASC, name ASC, id ASC)` |
 
@@ -736,7 +844,7 @@ CREATE TABLE "investment_positions" (
   id TEXT NOT NULL PRIMARY KEY,
   connector_id TEXT NOT NULL,
   source_id TEXT NOT NULL,
-  asset_type TEXT NOT NULL CHECK (asset_type IN ('stock', 'etf', 'fund')),
+  asset_type TEXT NOT NULL CHECK (asset_type IN ('stock', 'etf', 'fund', 'bond', 'option', 'cash', 'future', 'crypto', 'other')),
   symbol TEXT,
   name TEXT NOT NULL,
   quantity REAL,
@@ -747,6 +855,11 @@ CREATE TABLE "investment_positions" (
   raw_payload TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  investment_account_id TEXT REFERENCES investment_accounts(id) ON DELETE SET NULL,
+  custody_status TEXT NOT NULL DEFAULT 'free' CHECK (custody_status IN ('free', 'collateral', 'margin', 'restricted')),
+  average_cost REAL,
+  cost_basis INTEGER,
+  valuation_source TEXT NOT NULL DEFAULT 'source',
   UNIQUE (connector_id, source_id, as_of_date)
 )
 ```
@@ -791,9 +904,9 @@ CREATE TABLE "investment_positions" (
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
-| `idx_investment_transactions_trade_date` | 否 | 否 | `trade_date` | `CREATE INDEX idx_investment_transactions_trade_date<br>  ON investment_transactions (trade_date)` |
-| `idx_investment_transactions_symbol` | 否 | 否 | `symbol` | `CREATE INDEX idx_investment_transactions_symbol<br>  ON investment_transactions (symbol)` |
-| `idx_investment_transactions_effective_updated` | 否 | 否 | `effective_date`, `updated_at`, `id` | `CREATE INDEX idx_investment_transactions_effective_updated<br>  ON investment_transactions (effective_date DESC, updated_at DESC, id DESC)` |
+| `idx_investment_transactions_trade_date` | 否 | 否 | `trade_date` | `CREATE INDEX idx_investment_transactions_trade_date<br>  ON investment_transactions (trade_date)` |
+| `idx_investment_transactions_symbol` | 否 | 否 | `symbol` | `CREATE INDEX idx_investment_transactions_symbol<br>  ON investment_transactions (symbol)` |
+| `idx_investment_transactions_effective_updated` | 否 | 否 | `effective_date`, `updated_at`, `id` | `CREATE INDEX idx_investment_transactions_effective_updated<br>  ON investment_transactions (effective_date DESC, updated_at DESC, id DESC)` |
 
 #### DDL
 
@@ -856,8 +969,8 @@ CREATE TABLE "investment_transactions" (
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
-| `idx_invoice_line_items_invoice_id` | 否 | 否 | `invoice_id` | `CREATE INDEX idx_invoice_line_items_invoice_id<br>  ON invoice_line_items (invoice_id)` |
-| `idx_invoice_line_items_invoice_source` | 否 | 否 | `connector_id`, `invoice_source_id` | `CREATE INDEX idx_invoice_line_items_invoice_source<br>  ON invoice_line_items (connector_id, invoice_source_id)` |
+| `idx_invoice_line_items_invoice_id` | 否 | 否 | `invoice_id` | `CREATE INDEX idx_invoice_line_items_invoice_id<br>  ON invoice_line_items (invoice_id)` |
+| `idx_invoice_line_items_invoice_source` | 否 | 否 | `connector_id`, `invoice_source_id` | `CREATE INDEX idx_invoice_line_items_invoice_source<br>  ON invoice_line_items (connector_id, invoice_source_id)` |
 
 #### DDL
 
@@ -907,8 +1020,8 @@ CREATE TABLE "invoice_line_items" (
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
-| `idx_invoice_transaction_preferences_transaction` | 否 | 否 | `transaction_id` | `CREATE INDEX idx_invoice_transaction_preferences_transaction<br>  ON invoice_transaction_preferences (transaction_id)` |
-| `idx_invoice_transaction_preferences_linked_transaction` | 是 | 是 | `transaction_id` | `CREATE UNIQUE INDEX idx_invoice_transaction_preferences_linked_transaction<br>  ON invoice_transaction_preferences (transaction_id)<br>  WHERE decision = 'linked'` |
+| `idx_invoice_transaction_preferences_transaction` | 否 | 否 | `transaction_id` | `CREATE INDEX idx_invoice_transaction_preferences_transaction<br>  ON invoice_transaction_preferences (transaction_id)` |
+| `idx_invoice_transaction_preferences_linked_transaction` | 是 | 是 | `transaction_id` | `CREATE UNIQUE INDEX idx_invoice_transaction_preferences_linked_transaction<br>  ON invoice_transaction_preferences (transaction_id)<br>  WHERE decision = 'linked'` |
 
 #### DDL
 
@@ -954,8 +1067,8 @@ CREATE TABLE "invoice_transaction_preferences" (
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
-| `idx_invoices_invoice_date` | 否 | 否 | `invoice_date` | `CREATE INDEX idx_invoices_invoice_date<br>  ON invoices (invoice_date)` |
-| `idx_invoices_page` | 否 | 否 | `invoice_date`, `updated_at`, `id` | `CREATE INDEX idx_invoices_page<br>  ON invoices (invoice_date DESC, updated_at DESC, id DESC)` |
+| `idx_invoices_invoice_date` | 否 | 否 | `invoice_date` | `CREATE INDEX idx_invoices_invoice_date<br>  ON invoices (invoice_date)` |
+| `idx_invoices_page` | 否 | 否 | `invoice_date`, `updated_at`, `id` | `CREATE INDEX idx_invoices_page<br>  ON invoices (invoice_date DESC, updated_at DESC, id DESC)` |
 
 #### DDL
 
@@ -972,6 +1085,115 @@ CREATE TABLE "invoices" (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE (connector_id, source_id)
+)
+```
+
+### `liability_accounts`
+
+> 用途：貸款、融資、房貸及其他負債的帳戶主檔。
+> 注意：手動帳戶不保存 connector/source；即時餘額存於快照，NULL 表示未知。
+
+#### Columns
+
+| 順序 | 欄位 | 意義 | SQLite type | 可為 NULL | 預設值 | PK 順序 | Generated |
+| ---: | --- | --- | --- | :---: | --- | ---: | --- |
+| 1 | `id` | 負債帳戶系統識別碼。 | TEXT | NO | — | 1 | — |
+| 2 | `source_type` | 資料來源種類。 | TEXT | NO | 'manual' | — | — |
+| 3 | `connector_id` | 連接器識別碼。 | TEXT | YES | — | — | — |
+| 4 | `source_id` | 來源端帳戶識別碼。 | TEXT | YES | — | — | — |
+| 5 | `liability_type` | 負債種類。 | TEXT | NO | — | — | — |
+| 6 | `provider` | 貸款機構或債權人。 | TEXT | YES | — | — | — |
+| 7 | `name` | 顯示名稱。 | TEXT | NO | — | — | — |
+| 8 | `masked_identity` | 遮罩帳戶識別。 | TEXT | YES | — | — | — |
+| 9 | `currency` | 負債原生幣別。 | TEXT | NO | 'TWD' | — | — |
+| 10 | `original_principal` | 原始本金；未提供時為 NULL。 | INTEGER | YES | — | — | — |
+| 11 | `interest_rate` | 利率；未提供時為 NULL。 | REAL | YES | — | — | — |
+| 12 | `interest_rate_type` | 固定、浮動或未知。 | TEXT | YES | — | — | — |
+| 13 | `start_date` | 起始日期。 | TEXT | YES | — | — | — |
+| 14 | `maturity_date` | 到期日。 | TEXT | YES | — | — | — |
+| 15 | `monthly_payment` | 每月付款金額。 | INTEGER | YES | — | — | — |
+| 16 | `next_payment_date` | 下次付款日期。 | TEXT | YES | — | — | — |
+| 17 | `created_at` | 建立時間。 | TEXT | NO | — | — | — |
+| 18 | `updated_at` | 更新時間。 | TEXT | NO | — | — | — |
+
+#### Foreign keys
+
+—
+
+#### Indexes
+
+| Index | Unique | Partial | 欄位 | 定義 |
+| --- | :---: | :---: | --- | --- |
+| `idx_liability_accounts_type` | 否 | 否 | `liability_type`, `updated_at` | `CREATE INDEX idx_liability_accounts_type ON liability_accounts (liability_type, updated_at DESC)` |
+
+#### DDL
+
+```sql
+CREATE TABLE liability_accounts (
+  id TEXT NOT NULL PRIMARY KEY,
+  source_type TEXT NOT NULL DEFAULT 'manual' CHECK (source_type IN ('manual', 'connector')),
+  connector_id TEXT,
+  source_id TEXT,
+  liability_type TEXT NOT NULL CHECK (liability_type IN ('mortgage', 'personal_loan', 'securities_backed_loan', 'margin', 'credit_card', 'auto_loan', 'other')),
+  provider TEXT,
+  name TEXT NOT NULL,
+  masked_identity TEXT,
+  currency TEXT NOT NULL DEFAULT 'TWD',
+  original_principal INTEGER,
+  interest_rate REAL,
+  interest_rate_type TEXT CHECK (interest_rate_type IS NULL OR interest_rate_type IN ('fixed', 'variable', 'unknown')),
+  start_date TEXT,
+  maturity_date TEXT,
+  monthly_payment INTEGER,
+  next_payment_date TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK ((source_type = 'manual' AND connector_id IS NULL AND source_id IS NULL) OR (source_type = 'connector' AND connector_id IS NOT NULL AND source_id IS NOT NULL)),
+  UNIQUE (connector_id, source_id)
+)
+```
+
+### `liability_balance_snapshots`
+
+> 用途：負債帳戶在特定時間的本金與應計利息觀測。
+> 注意：outstanding_principal 為 NULL 時代表餘額未知，而非零。
+
+#### Columns
+
+| 順序 | 欄位 | 意義 | SQLite type | 可為 NULL | 預設值 | PK 順序 | Generated |
+| ---: | --- | --- | --- | :---: | --- | ---: | --- |
+| 1 | `id` | 負債餘額觀測識別碼。 | TEXT | NO | — | 1 | — |
+| 2 | `liability_account_id` | 所屬負債帳戶。 | TEXT | NO | — | — | — |
+| 3 | `outstanding_principal` | 未償本金；NULL 代表來源未知。 | INTEGER | YES | — | — | — |
+| 4 | `accrued_interest` | 可靠取得時保存的應計利息。 | INTEGER | YES | — | — | — |
+| 5 | `as_of_at` | 觀測時間。 | TEXT | NO | — | — | — |
+| 6 | `source` | manual、connector 或 reconstructed。 | TEXT | NO | 'manual' | — | — |
+| 7 | `created_at` | 寫入時間。 | TEXT | NO | — | — | — |
+
+#### Foreign keys
+
+| 欄位 | 參照表 | 參照欄位 | ON UPDATE | ON DELETE |
+| --- | --- | --- | --- | --- |
+| `liability_account_id` | `liability_accounts` | `id` | NO ACTION | CASCADE |
+
+#### Indexes
+
+| Index | Unique | Partial | 欄位 | 定義 |
+| --- | :---: | :---: | --- | --- |
+| `idx_liability_balance_snapshots_latest` | 否 | 否 | `liability_account_id`, `as_of_at` | `CREATE INDEX idx_liability_balance_snapshots_latest ON liability_balance_snapshots (liability_account_id, as_of_at DESC)` |
+
+#### DDL
+
+```sql
+CREATE TABLE liability_balance_snapshots (
+  id TEXT NOT NULL PRIMARY KEY,
+  liability_account_id TEXT NOT NULL REFERENCES liability_accounts(id) ON DELETE CASCADE,
+  outstanding_principal INTEGER,
+  accrued_interest INTEGER,
+  as_of_at TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual', 'connector', 'reconstructed')),
+  created_at TEXT NOT NULL,
+  UNIQUE (liability_account_id, as_of_at)
 )
 ```
 
@@ -1035,8 +1257,8 @@ CREATE TABLE "manual_assets" (
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
-| `idx_net_worth_history_date` | 否 | 否 | `date` | `CREATE INDEX idx_net_worth_history_date<br>  ON net_worth_history (date)` |
-| `idx_net_worth_history_page` | 否 | 否 | `date`, `source`, `asset_type`, `id` | `CREATE INDEX idx_net_worth_history_page<br>  ON net_worth_history (date DESC, source ASC, asset_type ASC, id ASC)` |
+| `idx_net_worth_history_date` | 否 | 否 | `date` | `CREATE INDEX idx_net_worth_history_date<br>  ON net_worth_history (date)` |
+| `idx_net_worth_history_page` | 否 | 否 | `date`, `source`, `asset_type`, `id` | `CREATE INDEX idx_net_worth_history_page<br>  ON net_worth_history (date DESC, source ASC, asset_type ASC, id ASC)` |
 
 #### DDL
 
@@ -1197,8 +1419,8 @@ CREATE TABLE scheduled_sync_batch_results (
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
-| `idx_scheduled_sync_batches_open` | 是 | 是 | `schedule_key` | `CREATE UNIQUE INDEX idx_scheduled_sync_batches_open<br>  ON scheduled_sync_batches (schedule_key)<br>  WHERE notification_claimed_at IS NULL` |
-| `idx_scheduled_sync_batches_completed` | 否 | 否 | `completed_at` | `CREATE INDEX idx_scheduled_sync_batches_completed<br>  ON scheduled_sync_batches (completed_at DESC)` |
+| `idx_scheduled_sync_batches_open` | 是 | 是 | `schedule_key` | `CREATE UNIQUE INDEX idx_scheduled_sync_batches_open<br>  ON scheduled_sync_batches (schedule_key)<br>  WHERE notification_claimed_at IS NULL` |
+| `idx_scheduled_sync_batches_completed` | 否 | 否 | `completed_at` | `CREATE INDEX idx_scheduled_sync_batches_completed<br>  ON scheduled_sync_batches (completed_at DESC)` |
 
 #### DDL
 
@@ -1363,7 +1585,7 @@ CREATE TABLE sync_activity_runs (
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
-| `idx_sync_jobs_due` | 否 | 否 | `enabled`, `next_run_at` | `CREATE INDEX idx_sync_jobs_due<br>  ON sync_jobs (enabled, next_run_at)` |
+| `idx_sync_jobs_due` | 否 | 否 | `enabled`, `next_run_at` | `CREATE INDEX idx_sync_jobs_due<br>  ON sync_jobs (enabled, next_run_at)` |
 
 #### DDL
 
@@ -1451,7 +1673,7 @@ CREATE TABLE "sync_schedule_settings" (
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
-| `idx_sync_write_staging_created_at` | 否 | 否 | `created_at` | `CREATE INDEX idx_sync_write_staging_created_at<br>  ON sync_write_staging (created_at)` |
+| `idx_sync_write_staging_created_at` | 否 | 否 | `created_at` | `CREATE INDEX idx_sync_write_staging_created_at<br>  ON sync_write_staging (created_at)` |
 
 #### DDL
 
@@ -1504,8 +1726,8 @@ CREATE TABLE sync_write_staging (
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
-| `idx_tdcc_sync_run_items_claim` | 否 | 否 | `run_id`, `status`, `lease_expires_at`, `created_at` | `CREATE INDEX idx_tdcc_sync_run_items_claim<br>  ON tdcc_sync_run_items (run_id, status, lease_expires_at, created_at)` |
-| `idx_tdcc_sync_run_items_account` | 否 | 否 | `run_id`, `account_id`, `task_type`, `page_number` | `CREATE INDEX idx_tdcc_sync_run_items_account<br>  ON tdcc_sync_run_items (run_id, account_id, task_type, page_number)` |
+| `idx_tdcc_sync_run_items_claim` | 否 | 否 | `run_id`, `status`, `lease_expires_at`, `created_at` | `CREATE INDEX idx_tdcc_sync_run_items_claim<br>  ON tdcc_sync_run_items (run_id, status, lease_expires_at, created_at)` |
+| `idx_tdcc_sync_run_items_account` | 否 | 否 | `run_id`, `account_id`, `task_type`, `page_number` | `CREATE INDEX idx_tdcc_sync_run_items_account<br>  ON tdcc_sync_run_items (run_id, account_id, task_type, page_number)` |
 
 #### DDL
 
@@ -1580,8 +1802,8 @@ CREATE TABLE "tdcc_sync_run_items" (
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
-| `idx_tdcc_sync_runs_one_active` | 是 | 是 | `connector_id` | `CREATE UNIQUE INDEX idx_tdcc_sync_runs_one_active<br>  ON tdcc_sync_runs (connector_id)<br>  WHERE status IN ('queued', 'initializing', 'processing', 'promoting')` |
-| `idx_tdcc_sync_runs_completed` | 否 | 否 | `completed_at` | `CREATE INDEX idx_tdcc_sync_runs_completed<br>  ON tdcc_sync_runs (completed_at DESC)` |
+| `idx_tdcc_sync_runs_one_active` | 是 | 是 | `connector_id` | `CREATE UNIQUE INDEX idx_tdcc_sync_runs_one_active<br>  ON tdcc_sync_runs (connector_id)<br>  WHERE status IN ('queued', 'initializing', 'processing', 'promoting')` |
+| `idx_tdcc_sync_runs_completed` | 否 | 否 | `completed_at` | `CREATE INDEX idx_tdcc_sync_runs_completed<br>  ON tdcc_sync_runs (completed_at DESC)` |
 
 #### DDL
 
@@ -1679,6 +1901,7 @@ Migration 是 schema 演進的 source of truth；若要了解某欄位的變更�
 - [`0045_preference_foreign_keys.sql`](../packages/db/migrations/0045_preference_foreign_keys.sql)
 - [`0046_transaction_self_foreign_keys.sql`](../packages/db/migrations/0046_transaction_self_foreign_keys.sql)
 - [`0047_sync_activity_details.sql`](../packages/db/migrations/0047_sync_activity_details.sql)
+- [`0048_personal_balance_sheet.sql`](../packages/db/migrations/0048_personal_balance_sheet.sql)
 
 ## 程式碼導覽
 

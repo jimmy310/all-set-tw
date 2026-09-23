@@ -116,7 +116,11 @@ const TEXT_PRIMARY_KEY_COLUMNS: Array<{ table: string; column: string }> = [
   { table: "einvoice_sync_runs", column: "id" },
   { table: "exchange_rates", column: "currency" },
   { table: "investment_positions", column: "id" },
+  { table: "investment_accounts", column: "id" },
   { table: "investment_transactions", column: "id" },
+  { table: "liability_accounts", column: "id" },
+  { table: "liability_balance_snapshots", column: "id" },
+  { table: "collateral_relationships", column: "id" },
   { table: "invoice_line_items", column: "id" },
   { table: "invoice_transaction_preferences", column: "invoice_id" },
   { table: "invoices", column: "id" },
@@ -215,7 +219,7 @@ describe("Drizzle schema parity", () => {
         }
       }
       const expected = inspect(migrated);
-      expect(expected).toHaveLength(31);
+      expect(expected).toHaveLength(35);
       expect(inspect(generated)).toEqual(expected);
       expect(generated.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
       // An unchanged schema must never produce an initialization migration.
@@ -228,6 +232,58 @@ describe("Drizzle schema parity", () => {
     } finally {
       migrated.close();
       generated.close();
+    }
+  });
+});
+
+describe("personal balance-sheet migration", () => {
+  it("preserves TDCC positions and investment transactions while adding account and custody fields", () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      const migrations = readMigrations();
+      for (const migration of migrations.slice(0, -1)) database.exec(migration);
+      database.exec(`
+        INSERT INTO investment_positions
+          (id, connector_id, source_id, asset_type, name, quantity, market_value, currency, as_of_date, created_at, updated_at)
+        VALUES ('position-1', 'tdcc', 'holding-1', 'stock', '2317', 3, 300, 'TWD', '2026-08-01', '2026-08-01', '2026-08-01');
+        INSERT INTO investment_transactions
+          (id, connector_id, account_id, source_id, quantity, amount, currency, created_at, updated_at)
+        VALUES ('trade-1', 'tdcc', 'broker-mask', 'trade-source-1', 3, 300, 'TWD', '2026-08-01', '2026-08-01');
+      `);
+      database.exec(migrations.at(-1)!);
+      expect(
+        database
+          .prepare(
+            "SELECT id, connector_id, source_id, quantity, market_value, investment_account_id, custody_status FROM investment_positions",
+          )
+          .all(),
+      ).toEqual([
+        {
+          id: "position-1",
+          connector_id: "tdcc",
+          source_id: "holding-1",
+          quantity: 3,
+          market_value: 300,
+          investment_account_id: null,
+          custody_status: "free",
+        },
+      ]);
+      expect(
+        database
+          .prepare(
+            "SELECT id, source_id, quantity, amount FROM investment_transactions",
+          )
+          .all(),
+      ).toEqual([
+        {
+          id: "trade-1",
+          source_id: "trade-source-1",
+          quantity: 3,
+          amount: 300,
+        },
+      ]);
+    } finally {
+      database.close();
     }
   });
 });

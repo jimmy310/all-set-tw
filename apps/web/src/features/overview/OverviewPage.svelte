@@ -12,6 +12,7 @@
   import type { ApiClient } from "@/shared/api/client";
   import {
     exchangeRatesQuery,
+    liabilitiesQuery,
     manualAssetsQuery,
     netWorthHistoryQuery,
   } from "@/data/assets/queries";
@@ -40,6 +41,7 @@
   } from "@/shared/format/financial";
   import NetWorthHistoryChart from "./components/NetWorthHistoryChart.svelte";
   import LatestSyncReportCard from "./components/LatestSyncReportCard.svelte";
+  import { calculateBalanceSheet } from "@/features/assets/model/balance-sheet";
 
   type InsightTone = "coral" | "amber" | "moss" | "steel";
   type InsightIcon = "sync" | "card" | "cashflow";
@@ -73,6 +75,7 @@
     invoiceTransactionMappingsQuery(() => api),
   );
   const manualAssets = createQuery(manualAssetsQuery(() => api));
+  const liabilities = createQuery(liabilitiesQuery(() => api));
   const rates = createQuery(exchangeRatesQuery(() => api));
   const jobs = createQuery(syncJobsQuery(() => api));
   const latestSyncReport = createQuery(latestSyncReportQuery(() => api));
@@ -118,7 +121,44 @@
     ),
   );
   const gross = $derived(depositTotal + investmentTotal + manualTotal);
-  const netWorth = $derived(gross - cardDebt);
+  const balanceSheet = $derived(
+    calculateBalanceSheet({
+      assets: [
+        ...deposits.map((account) => ({
+          value: account.balance,
+          currency: account.currency,
+        })),
+        ...($investments.data ?? []).map((item) => ({
+          value:
+            item.marketValue === null && item.cashBalance == null
+              ? null
+              : (item.marketValue ?? 0) + (item.cashBalance ?? 0),
+          currency: item.currency,
+        })),
+        ...($manualAssets.data ?? []).map((item) => ({
+          value: item.value ?? null,
+          currency: item.currency,
+        })),
+      ],
+      liabilities: [
+        ...cards.map((account) => ({
+          value: account.balance == null ? null : Math.abs(account.balance),
+          currency: account.currency,
+        })),
+        ...($liabilities.data ?? [])
+          .filter((item) => item.liabilityType !== "credit_card")
+          .map((item) => ({
+            value:
+              item.outstandingPrincipal == null
+                ? null
+                : item.outstandingPrincipal + (item.accruedInterest ?? 0),
+            currency: item.currency,
+          })),
+      ],
+      rates: rateValues,
+    }),
+  );
+  const balanceSheetIncomplete = $derived(balanceSheet.netWorth === null);
   const allocation = $derived([
     {
       label: "銀行與現金",
@@ -280,6 +320,10 @@
               currency: item.currency,
               amount: item.value ?? 0,
             })),
+            ...($liabilities.data ?? []).map((item) => ({
+              currency: item.currency,
+              amount: item.outstandingPrincipal ?? 0,
+            })),
           ],
           rateValues,
         )
@@ -290,14 +334,16 @@
       $monthlyInvoices.isPending ||
       $invoiceMappings.isPending ||
       $investments.isPending ||
-      $manualAssets.isPending,
+      $manualAssets.isPending ||
+      $liabilities.isPending,
   );
   const failed = $derived(
     $monthlyBank.isError ||
       $monthlyInvoices.isError ||
       $invoiceMappings.isError ||
       $investments.isError ||
-      $manualAssets.isError,
+      $manualAssets.isError ||
+      $liabilities.isError,
   );
 </script>
 
@@ -326,6 +372,15 @@
       </div>
     {/if}
 
+    {#if balanceSheetIncomplete && !missingRates.length}
+      <div
+        class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+        role="status"
+      >
+        有資產或負債餘額未知，暫不顯示完整淨值。請檢查資產與貸款的估值日期及餘額。
+      </div>
+    {/if}
+
     <section class="min-w-0 pt-3 md:pt-2" aria-label="淨資產">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <p class="text-sm text-subtle">淨資產</p>
@@ -340,10 +395,17 @@
       <p
         class="mt-3 break-all text-[clamp(2rem,7vw,2.75rem)] leading-tight font-semibold tracking-tight tabular-nums"
       >
-        {formatCurrency(netWorth)}
+        {balanceSheet.netWorth === null
+          ? "資料不完整"
+          : formatCurrency(balanceSheet.netWorth)}
       </p>
       <p class="mt-3 text-caption text-subtle">
-        已扣除 {formatCurrency(cardDebt)} 信用卡負債
+        總資產 {balanceSheet.grossAssets === null
+          ? "資料不完整"
+          : formatCurrency(balanceSheet.grossAssets)}
+        · 總負債 {balanceSheet.totalLiabilities === null
+          ? "資料不完整"
+          : formatCurrency(balanceSheet.totalLiabilities)}
       </p>
       <div class="mt-6 grid grid-cols-3 gap-3 md:gap-6">
         {#each allocation as item (item.label)}

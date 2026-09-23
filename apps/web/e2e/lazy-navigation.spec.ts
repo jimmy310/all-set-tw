@@ -12,10 +12,12 @@ test.beforeEach(async ({ page }) => {
     else if (path === "/api/bank") body = { accounts: [], transactions: [] };
     else if (path.startsWith("/api/bank/")) body = [];
     else if (path === "/api/investments") body = [];
+    else if (path === "/api/investment-accounts") body = [];
     else if (path === "/api/investment-transactions") body = [];
     else if (path === "/api/invoices") body = [];
     else if (path === "/api/activity/invoice-mappings") body = [];
     else if (path === "/api/manual-assets") body = [];
+    else if (path === "/api/liabilities") body = [];
     else if (path === "/api/exchange-rates") body = [];
     else if (path === "/api/classification/categories") body = [];
     else throw new Error(`Unexpected API request in lazy-page test: ${path}`);
