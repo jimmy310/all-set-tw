@@ -276,9 +276,15 @@ test("keeps desktop liability management reachable without manual assets", async
   await expect(
     page.getByRole("heading", { name: "負債與貸款", exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("listitem").filter({ hasText: "主要住宅房貸" }),
-  ).toBeVisible();
+  const mortgage = page
+    .getByRole("listitem")
+    .filter({ hasText: "主要住宅房貸" });
+  await expect(mortgage).toBeVisible();
+  await mortgage.getByRole("button", { name: "編輯" }).click();
+  await expect(page.getByRole("textbox", { name: "負債名稱" })).toHaveValue(
+    "主要住宅房貸",
+  );
+  await expect(page.getByRole("button", { name: "更新負債" })).toBeVisible();
 });
 
 test("shows brokerage cash, option, and reconciliation controls in Investments", async ({
