@@ -12,6 +12,7 @@
   } from "@/data/investments/queries";
   import type { InvestmentTransactionRow } from "@/data/investments/types";
   import ManualInvestments from "./components/ManualInvestments.svelte";
+  import { investmentPositionValue } from "./model/balance-sheet";
   import {
     formatCurrency,
     formatDate,
@@ -34,7 +35,7 @@
   const rateValues = $derived(rateMap($rates.data));
   const total = $derived(
     ($investments.data ?? []).reduce((s, p) => {
-      const value = (p.marketValue ?? 0) + (p.cashBalance ?? 0);
+      const value = investmentPositionValue(p) ?? 0;
       return (
         s +
         (p.currency === "TWD" ? value : value * (rateValues[p.currency] ?? 0))
@@ -44,7 +45,7 @@
   const totalIncomplete = $derived(
     positions.some(
       (p) =>
-        (p.marketValue == null && p.cashBalance == null) ||
+        investmentPositionValue(p) == null ||
         (p.currency !== "TWD" && rateValues[p.currency] == null),
     ),
   );
@@ -142,12 +143,9 @@
                     {p.quantity == null ? "-" : formatNumber(p.quantity)}
                   </td>
                   <td class="px-4 py-3 text-right font-semibold tabular-nums">
-                    {p.marketValue == null && p.cashBalance == null
+                    {investmentPositionValue(p) == null
                       ? "估值未知"
-                      : formatCurrency(
-                          (p.marketValue ?? 0) + (p.cashBalance ?? 0),
-                          p.currency,
-                        )}
+                      : formatCurrency(investmentPositionValue(p)!, p.currency)}
                   </td>
                   <td class="py-3 pl-4 text-caption text-subtle">
                     {formatDate(p.asOfDate)}
@@ -169,12 +167,9 @@
                 </p>
               </div>
               <p class="shrink-0 font-medium tabular-nums text-steel">
-                {p.marketValue == null && p.cashBalance == null
+                {investmentPositionValue(p) == null
                   ? "估值未知"
-                  : formatCurrency(
-                      (p.marketValue ?? 0) + (p.cashBalance ?? 0),
-                      p.currency,
-                    )}
+                  : formatCurrency(investmentPositionValue(p)!, p.currency)}
               </p>
             </div>
           {/each}

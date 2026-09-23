@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateBalanceSheet,
+  calculatePersonalBalanceSheet,
+  investmentPositionValue,
   reconcilePositionObservations,
 } from "./balance-sheet";
 
@@ -111,5 +113,152 @@ describe("personal balance sheet invariants", () => {
         rates: {},
       }),
     ).toMatchObject({ grossAssets: null, missingCurrencies: ["EUR"] });
+  });
+
+  it("does not treat an unknown non-cash market value as a zero cash balance", () => {
+    expect(
+      investmentPositionValue({
+        assetType: "stock",
+        marketValue: null,
+        cashBalance: 0,
+      }),
+    ).toBeNull();
+    expect(
+      investmentPositionValue({
+        assetType: "cash",
+        marketValue: null,
+        cashBalance: 0,
+      }),
+    ).toBe(0);
+  });
+
+  it("shares one net-worth result for assets and overview, including mortgage and card debt", () => {
+    const input = {
+      bankAccounts: [
+        { accountType: "credit", balance: -100_000, currency: "TWD" },
+      ],
+      investments: [],
+      manualAssets: [{ value: 20_000_000, currency: "TWD" }],
+      liabilities: [
+        {
+          liabilityType: "mortgage",
+          outstandingPrincipal: 6_000_000,
+          accruedInterest: 0,
+          currency: "TWD",
+        },
+      ],
+      rates: {},
+    };
+    const overview = calculatePersonalBalanceSheet(input);
+    const assetsPage = calculatePersonalBalanceSheet(input);
+    expect(overview.netWorth).toBe(13_900_000);
+    expect(assetsPage.netWorth).toBe(overview.netWorth);
+    expect(
+      calculatePersonalBalanceSheet({
+        ...input,
+        liabilities: [
+          ...input.liabilities,
+          {
+            liabilityType: "personal_loan",
+            outstandingPrincipal: 500_000,
+            currency: "TWD",
+          },
+        ],
+      }).netWorth,
+    ).toBe(13_400_000);
+  });
+
+  it("does not infer overlap from symbols, and uses explicit complete/subset reconciliation", () => {
+    const positions = [
+      {
+        assetType: "stock",
+        symbol: "2330",
+        marketValue: 3_000,
+        currency: "TWD",
+      },
+      {
+        assetType: "stock",
+        symbol: "2330",
+        marketValue: 5_000,
+        currency: "TWD",
+      },
+    ];
+    const unlinked = calculatePersonalBalanceSheet({
+      bankAccounts: [],
+      investments: positions,
+      manualAssets: [],
+      liabilities: [],
+      rates: {},
+    });
+    expect(unlinked.grossAssets).toBe(8_000);
+    const linked = calculatePersonalBalanceSheet({
+      bankAccounts: [],
+      investments: [
+        {
+          ...positions[0]!,
+          economicSecurityId: "manual-link:2330",
+          observationCoverage: "complete" as const,
+        },
+        {
+          ...positions[1]!,
+          economicSecurityId: "manual-link:2330",
+          observationCoverage: "subset" as const,
+        },
+      ],
+      manualAssets: [],
+      liabilities: [],
+      rates: {},
+    });
+    expect(linked.grossAssets).toBe(3_000);
+    const disjoint = calculatePersonalBalanceSheet({
+      bankAccounts: [],
+      investments: [
+        {
+          ...positions[0]!,
+          economicSecurityId: "explicit:2330",
+          observationCoverage: "subset",
+        },
+        {
+          ...positions[1]!,
+          economicSecurityId: "explicit:2330",
+          observationCoverage: "subset",
+        },
+      ],
+      manualAssets: [],
+      liabilities: [],
+      rates: {},
+    });
+    expect(disjoint.grossAssets).toBe(8_000);
+  });
+
+  it("treats negative option fair value as a derivative liability and keeps unknowns incomplete", () => {
+    expect(
+      calculateBalanceSheet({
+        assets: [
+          { value: -250, currency: "USD", kind: "derivative" },
+          { value: -100, currency: "TWD", kind: "derivative" },
+        ],
+        liabilities: [],
+        rates: { USD: 32 },
+      }),
+    ).toMatchObject({
+      grossAssets: 0,
+      totalLiabilities: 8_100,
+      netWorth: -8_100,
+    });
+    expect(
+      calculateBalanceSheet({
+        assets: [{ value: 10, currency: "EUR" }],
+        liabilities: [],
+        rates: {},
+      }).netWorth,
+    ).toBeNull();
+    expect(
+      calculateBalanceSheet({
+        assets: [{ value: null, currency: "USD" }],
+        liabilities: [],
+        rates: { USD: 32 },
+      }).grossAssets,
+    ).toBeNull();
   });
 });

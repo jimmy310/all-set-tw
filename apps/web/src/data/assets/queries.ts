@@ -7,6 +7,7 @@ import type {
   ManualAssetRow,
   NetWorthHistoryRow,
   LiabilityRow,
+  CollateralRelationshipRow,
 } from "./types";
 
 type ApiProvider = () => ApiClient;
@@ -21,6 +22,15 @@ export const liabilitiesQuery = (getApi: ApiProvider) =>
   queryOptions({
     queryKey: queryKeys.liabilities,
     queryFn: () => getApi().get<LiabilityRow[]>("/api/liabilities"),
+  });
+
+export const collateralRelationshipsQuery = (getApi: ApiProvider) =>
+  queryOptions({
+    queryKey: queryKeys.collateralRelationships,
+    queryFn: () =>
+      getApi().get<CollateralRelationshipRow[]>(
+        "/api/collateral-relationships",
+      ),
   });
 
 export const manualAssetHistoryQuery = (

@@ -2,6 +2,10 @@ import type { ExchangeRateRow, ManualAssetRow } from "@/data/assets/types";
 import type { BankAccountRow, BankData } from "@/data/bank/types";
 import type { InvestmentRow } from "@/data/investments/types";
 import { missingExchangeRateCurrencies } from "@/shared/format/financial";
+import {
+  calculatePersonalBalanceSheet,
+  investmentPositionValue,
+} from "./balance-sheet";
 
 const CONNECTOR_BANK_CODES: Record<string, string> = {
   firstbank: "007",
@@ -23,6 +27,7 @@ export interface InstitutionAssetGroup {
   assetTotalTwd: number;
   debtTotalTwd: number;
   hasUnknownCardBalance: boolean;
+  hasUnknownAssetBalance: boolean;
   foreignCurrencies: string[];
 }
 
@@ -31,11 +36,15 @@ export interface AssetSummary {
   cards: BankAccountRow[];
   bankTotal: number;
   investmentTotal: number;
+  investmentIncomplete: boolean;
+  bankIncomplete: boolean;
+  manualIncomplete: boolean;
   manualTotal: number;
   cardDebt: number;
   hasUnknownCardBalance: boolean;
-  grossAssets: number;
-  netWorth: number;
+  grossAssets: number | null;
+  totalLiabilities: number | null;
+  netWorth: number | null;
   institutionGroups: InstitutionAssetGroup[];
   missingCurrencies: string[];
 }
@@ -50,11 +59,18 @@ export function calculateAssetSummary({
   bank,
   investments,
   manualAssets,
+  liabilities = [],
   rates,
 }: {
   bank: BankData;
   investments: InvestmentRow[];
   manualAssets: ManualAssetRow[];
+  liabilities?: Array<{
+    liabilityType?: string;
+    outstandingPrincipal: number | null;
+    accruedInterest?: number | null;
+    currency: string;
+  }>;
   rates?: ExchangeRateRow[];
 }): AssetSummary {
   const rateValues = Object.fromEntries(
@@ -80,11 +96,18 @@ export function calculateAssetSummary({
       })),
       ...investments.map((item) => ({
         currency: item.currency,
-        amount: (item.marketValue ?? 0) + (item.cashBalance ?? 0),
+        amount: investmentPositionValue(item) ?? 0,
       })),
       ...manualAssets.map((item) => ({
         currency: item.currency,
         amount: item.value ?? 0,
+      })),
+      ...liabilities.map((item) => ({
+        currency: item.currency,
+        amount:
+          item.outstandingPrincipal == null
+            ? 0
+            : item.outstandingPrincipal + (item.accruedInterest ?? 0),
       })),
     ],
     rateValues,
@@ -95,8 +118,7 @@ export function calculateAssetSummary({
   );
   const investmentTotal = investments.reduce(
     (sum, item) =>
-      sum +
-      toTwd((item.marketValue ?? 0) + (item.cashBalance ?? 0), item.currency),
+      sum + toTwd(investmentPositionValue(item) ?? 0, item.currency),
     0,
   );
   const manualTotal = manualAssets.reduce(
@@ -108,7 +130,13 @@ export function calculateAssetSummary({
       sum + Math.abs(toTwd(account.balance ?? 0, account.currency)),
     0,
   );
-  const grossAssets = bankTotal + investmentTotal + manualTotal;
+  const balanceSheet = calculatePersonalBalanceSheet({
+    bankAccounts: bank.accounts,
+    investments,
+    manualAssets,
+    liabilities,
+    rates: rateValues,
+  });
 
   const groups = bank.accounts.reduce<Record<string, BankAccountRow[]>>(
     (result, account) => {
@@ -146,7 +174,20 @@ export function calculateAssetSummary({
           (sum, account) => sum + toTwd(account.balance ?? 0, account.currency),
           0,
         ),
-        hasUnknownCardBalance: cards.some((card) => card.balance == null),
+        hasUnknownCardBalance: cards.some(
+          (card) =>
+            card.balance == null ||
+            (card.currency !== "TWD" &&
+              rateValues[card.currency] == null &&
+              card.balance !== 0),
+        ),
+        hasUnknownAssetBalance: accounts.some(
+          (account) =>
+            account.balance == null ||
+            (account.currency !== "TWD" &&
+              rateValues[account.currency] == null &&
+              account.balance !== 0),
+        ),
         debtTotalTwd: cards.reduce(
           (sum, account) =>
             sum + Math.abs(toTwd(account.balance ?? 0, account.currency)),
@@ -173,12 +214,36 @@ export function calculateAssetSummary({
     cards,
     bankTotal,
     investmentTotal,
+    investmentIncomplete: investments.some(
+      (item) =>
+        investmentPositionValue(item) == null ||
+        (item.currency !== "TWD" &&
+          rateValues[item.currency] == null &&
+          (investmentPositionValue(item) ?? 0) !== 0),
+    ),
+    bankIncomplete: bank.accounts.some(
+      (item) =>
+        item.balance == null ||
+        (item.currency !== "TWD" &&
+          rateValues[item.currency] == null &&
+          item.balance !== 0),
+    ),
+    manualIncomplete: manualAssets.some(
+      (item) =>
+        item.value == null ||
+        (item.currency !== "TWD" &&
+          rateValues[item.currency] == null &&
+          item.value !== 0),
+    ),
     manualTotal,
     cardDebt,
     hasUnknownCardBalance: cards.some((card) => card.balance == null),
-    grossAssets,
-    netWorth: grossAssets - cardDebt,
+    grossAssets: balanceSheet.grossAssets,
+    totalLiabilities: balanceSheet.totalLiabilities,
+    netWorth: balanceSheet.netWorth,
     institutionGroups,
-    missingCurrencies,
+    missingCurrencies: [
+      ...new Set([...missingCurrencies, ...balanceSheet.missingCurrencies]),
+    ].sort(),
   };
 }

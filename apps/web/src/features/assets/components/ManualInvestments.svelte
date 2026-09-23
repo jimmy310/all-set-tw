@@ -4,9 +4,16 @@
     createQuery,
     useQueryClient,
   } from "@tanstack/svelte-query";
-  import { investmentAccountsQuery } from "@/data/investments/queries";
+  import {
+    investmentAccountsQuery,
+    investmentsQuery,
+  } from "@/data/investments/queries";
   import { queryKeys } from "@/shared/api/query-keys";
   import type { ApiClient } from "@/shared/api/client";
+  import type {
+    InvestmentAccountRow,
+    InvestmentRow,
+  } from "@/data/investments/types";
   import Button from "@/shared/ui/Button.svelte";
   import Input from "@/shared/ui/Input.svelte";
   import Select from "@/shared/ui/Select.svelte";
@@ -15,6 +22,7 @@
   let { api }: { api: ApiClient } = $props();
   const qc = useQueryClient();
   const accounts = createQuery(investmentAccountsQuery(() => api));
+  const positions = createQuery(investmentsQuery(() => api));
   let provider = $state("");
   let accountName = $state("");
   let accountType = $state("brokerage");
@@ -31,26 +39,66 @@
   let custodyStatus = $state("free");
   let asOfDate = $state(todayStr());
   let error = $state("");
+  let editingAccountId = $state<string | null>(null);
+  let editingPositionId = $state<string | null>(null);
+  let underlyingSymbol = $state("");
+  let expirationDate = $state("");
+  let strikePrice = $state("");
+  let optionRight = $state("call");
+  let contractMultiplier = $state("100");
+  let contractSymbol = $state("");
+  let optionMarkPrice = $state("");
+  let averageCost = $state("");
+  let costBasis = $state("");
+  let reconciliationPositionId = $state("");
+  let economicSecurityId = $state("");
+  let observationCoverage = $state("complete");
 
-  const addAccount = createMutation({
+  const addAccount = createMutation<{ id: string } | { success: boolean }>({
     mutationFn: () =>
-      api.post<{ id: string }>("/api/investment-accounts", {
-        provider: provider.trim(),
-        displayName: accountName.trim(),
-        accountType,
-        maskedIdentity: maskedIdentity.trim() || null,
-        currency: accountCurrency,
-        market: market.trim() || null,
-      }),
+      editingAccountId
+        ? api.put<{ success: boolean }>(
+            `/api/investment-accounts/${editingAccountId}`,
+            {
+              provider: provider.trim(),
+              displayName: accountName.trim(),
+              accountType,
+              maskedIdentity: maskedIdentity.trim() || null,
+              currency: accountCurrency,
+              market: market.trim() || null,
+            },
+          )
+        : api.post<{ id: string }>("/api/investment-accounts", {
+            provider: provider.trim(),
+            displayName: accountName.trim(),
+            accountType,
+            maskedIdentity: maskedIdentity.trim() || null,
+            currency: accountCurrency,
+            market: market.trim() || null,
+          }),
     onSuccess: (result) => {
-      accountId = result.id;
+      if ("id" in result) accountId = result.id;
+      editingAccountId = null;
+      provider = "";
+      accountName = "";
+      maskedIdentity = "";
       qc.invalidateQueries({ queryKey: queryKeys.investmentAccounts });
       error = "";
     },
   });
-  const addPosition = createMutation({
-    mutationFn: () =>
-      api.post("/api/investments/manual", {
+  const removeAccount = createMutation({
+    mutationFn: (id: string) => api.delete(`/api/investment-accounts/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.investmentAccounts });
+      error = "";
+    },
+    onError: () => {
+      error = "帳戶仍有持倉，請先刪除或移動持倉。";
+    },
+  });
+  const addPosition = createMutation<{ id: string } | { success: boolean }>({
+    mutationFn: () => {
+      const body = {
         accountId,
         assetType,
         symbol: symbol.trim() || null,
@@ -58,20 +106,96 @@
         quantity: quantity === "" ? null : Number(quantity),
         marketValue: marketValue === "" ? null : Number(marketValue),
         currency,
+        averageCost: averageCost === "" ? null : Number(averageCost),
+        costBasis: costBasis === "" ? null : Number(costBasis),
         custodyStatus,
         asOfDate,
-      }),
+        underlyingSymbol: underlyingSymbol.trim() || null,
+        expirationDate: expirationDate || null,
+        strikePrice: strikePrice === "" ? null : Number(strikePrice),
+        optionRight,
+        contractMultiplier: Number(contractMultiplier || "100"),
+        contractSymbol: contractSymbol.trim() || null,
+        optionMarkPrice:
+          optionMarkPrice === "" ? null : Number(optionMarkPrice),
+      };
+      return editingPositionId
+        ? api.put<{ success: boolean }>(
+            `/api/investments/manual/${editingPositionId}`,
+            body,
+          )
+        : api.post<{ id: string }>("/api/investments/manual", body);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.investments });
+      editingPositionId = null;
       name = "";
       symbol = "";
       quantity = "";
       marketValue = "";
+      underlyingSymbol = "";
+      expirationDate = "";
+      strikePrice = "";
+      contractSymbol = "";
+      optionMarkPrice = "";
       error = "";
     },
   });
+  const removePosition = createMutation({
+    mutationFn: (id: string) => api.delete(`/api/investments/manual/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.investments }),
+    onError: () => {
+      error = "此持倉已連結為抵押品，請先解除抵押連結。";
+    },
+  });
+  const linkReconciliation = createMutation({
+    mutationFn: () =>
+      api.put(`/api/investments/${reconciliationPositionId}/reconciliation`, {
+        economicSecurityId: economicSecurityId.trim() || null,
+        observationCoverage,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.investments }),
+  });
+  function editAccount(account: InvestmentAccountRow) {
+    editingAccountId = account.id;
+    provider = account.provider;
+    accountName = account.displayName;
+    accountType = account.accountType;
+    maskedIdentity = account.maskedIdentity ?? "";
+    accountCurrency = account.currency;
+    market = account.market ?? "";
+  }
+  function editPosition(position: InvestmentRow) {
+    editingPositionId = position.id;
+    accountId = position.investmentAccountId ?? "";
+    assetType = position.assetType;
+    symbol = position.symbol ?? "";
+    name = position.name;
+    quantity = position.quantity == null ? "" : String(position.quantity);
+    marketValue =
+      position.marketValue == null ? "" : String(position.marketValue);
+    currency = position.currency;
+    custodyStatus = position.custodyStatus ?? "free";
+    asOfDate = position.asOfDate;
+    underlyingSymbol = position.underlyingSymbol ?? "";
+    expirationDate = position.expirationDate ?? "";
+    strikePrice =
+      position.strikePrice == null ? "" : String(position.strikePrice);
+    optionRight = position.optionRight ?? "call";
+    contractMultiplier = String(position.contractMultiplier ?? 100);
+    contractSymbol = position.contractSymbol ?? "";
+    optionMarkPrice =
+      position.optionMarkPrice == null ? "" : String(position.optionMarkPrice);
+    averageCost =
+      position.averageCost == null ? "" : String(position.averageCost);
+    costBasis = position.costBasis == null ? "" : String(position.costBasis);
+  }
   function savePosition() {
-    if (!accountId || !name.trim() || (quantity === "" && marketValue === "")) {
+    if (
+      !accountId ||
+      !name.trim() ||
+      (quantity === "" && marketValue === "" && optionMarkPrice === "")
+    ) {
       error = "請選擇投資帳戶，填寫標的名稱，並提供數量或估值。";
       return;
     }
@@ -93,7 +217,9 @@
         $addAccount.mutate();
       }}
     >
-      <h3 class="font-medium">投資帳戶</h3>
+      <h3 class="font-medium">
+        {editingAccountId ? "編輯投資帳戶" : "投資帳戶"}
+      </h3>
       <Input
         aria-label="券商或機構"
         placeholder="券商或機構"
@@ -133,8 +259,18 @@
         maxlength="32"
       />
       <Button type="submit" variant="secondary" disabled={$addAccount.isPending}
-        >新增帳戶</Button
+        >{editingAccountId ? "更新帳戶" : "新增帳戶"}</Button
       >
+      {#if editingAccountId}<Button
+          type="button"
+          variant="ghost"
+          onclick={() => {
+            editingAccountId = null;
+            provider = "";
+            accountName = "";
+            maskedIdentity = "";
+          }}>取消編輯</Button
+        >{/if}
     </form>
     <form
       class="grid content-start gap-3 rounded-lg bg-ink/3 p-4"
@@ -143,7 +279,7 @@
         savePosition();
       }}
     >
-      <h3 class="font-medium">持倉快照</h3>
+      <h3 class="font-medium">{editingPositionId ? "編輯持倉" : "持倉快照"}</h3>
       <Select aria-label="投資帳戶" bind:value={accountId}>
         <option value="">選擇帳戶</option>
         {#each $accounts.data ?? [] as account (account.id)}
@@ -181,7 +317,6 @@
         <Input
           aria-label="持有數量"
           type="number"
-          min="0"
           step="any"
           placeholder="持有數量"
           bind:value={quantity}
@@ -189,7 +324,6 @@
         <Input
           aria-label="市值"
           type="number"
-          min="0"
           step="1"
           placeholder="市值（可留空）"
           bind:value={marketValue}
@@ -211,13 +345,167 @@
         >
         <Input aria-label="估值日期" type="date" bind:value={asOfDate} />
       </div>
+      {#if assetType === "option"}
+        <div
+          class="grid grid-cols-2 gap-3 rounded-lg border border-border p-3 sm:grid-cols-3"
+        >
+          <Input
+            aria-label="選擇權標的"
+            placeholder="標的代號，例如 TSM"
+            bind:value={underlyingSymbol}
+          />
+          <Input aria-label="到期日" type="date" bind:value={expirationDate} />
+          <Input
+            aria-label="履約價"
+            type="number"
+            min="0"
+            step="any"
+            placeholder="履約價"
+            bind:value={strikePrice}
+          />
+          <Select aria-label="買權或賣權" bind:value={optionRight}
+            ><option value="call">Call 買權</option><option value="put"
+              >Put 賣權</option
+            ></Select
+          >
+          <Input
+            aria-label="合約乘數"
+            type="number"
+            min="0.000001"
+            step="any"
+            bind:value={contractMultiplier}
+          />
+          <Input
+            aria-label="選擇權合約代號"
+            placeholder="合約代號（選填）"
+            bind:value={contractSymbol}
+          />
+          <Input
+            aria-label="每單位權利金"
+            type="number"
+            min="0"
+            step="any"
+            placeholder="每單位標記價格"
+            bind:value={optionMarkPrice}
+          />
+        </div>
+      {/if}
+      <div class="grid grid-cols-2 gap-3">
+        <Input
+          aria-label="平均成本"
+          type="number"
+          step="any"
+          placeholder="平均成本（選填）"
+          bind:value={averageCost}
+        />
+        <Input
+          aria-label="成本基礎"
+          type="number"
+          step="1"
+          placeholder="成本基礎（選填）"
+          bind:value={costBasis}
+        />
+      </div>
       <Button
         type="submit"
         variant="primary"
         disabled={$addPosition.isPending || $accounts.isPending}
-        >新增持倉</Button
+        >{editingPositionId ? "更新持倉" : "新增持倉"}</Button
       >
+      {#if editingPositionId}<Button
+          type="button"
+          variant="ghost"
+          onclick={() => {
+            editingPositionId = null;
+            name = "";
+          }}>取消編輯</Button
+        >{/if}
     </form>
   </div>
+  <div class="mt-4 grid gap-2 md:grid-cols-2">
+    {#each $accounts.data ?? [] as account (account.id)}
+      <div
+        class="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm"
+      >
+        <span
+          >{account.displayName} · {account.provider}{account.maskedIdentity
+            ? ` ${account.maskedIdentity}`
+            : ""}</span
+        >
+        <span class="flex gap-1"
+          ><Button
+            size="sm"
+            variant="ghost"
+            onclick={() => editAccount(account)}>編輯</Button
+          ><Button
+            size="sm"
+            variant="ghost"
+            onclick={() => $removeAccount.mutate(account.id)}>刪除</Button
+          ></span
+        >
+      </div>
+    {/each}
+  </div>
+  <div class="mt-2 divide-y divide-border">
+    {#each ($positions.data ?? []).filter((position) => position.connectorId === "manual") as position (position.id)}
+      <div class="flex items-center justify-between gap-3 py-2 text-sm">
+        <span
+          >{position.assetType === "option"
+            ? `${position.underlyingSymbol ?? "?"} ${position.expirationDate ?? "?"} ${position.strikePrice ?? "?"} ${position.optionRight ?? "option"}`
+            : `${position.symbol ?? ""} ${position.name}`} · {position.marketValue ==
+          null
+            ? "估值未知"
+            : `${position.marketValue} ${position.currency}`}</span
+        >
+        <span class="flex gap-1"
+          ><Button
+            size="sm"
+            variant="ghost"
+            onclick={() => editPosition(position)}>編輯</Button
+          ><Button
+            size="sm"
+            variant="ghost"
+            onclick={() => $removePosition.mutate(position.id)}>刪除</Button
+          ></span
+        >
+      </div>
+    {/each}
+  </div>
+  <form
+    class="mt-3 grid gap-2 rounded-lg border border-border p-3 sm:grid-cols-[1fr_1fr_1fr_auto]"
+    onsubmit={(event) => {
+      event.preventDefault();
+      $linkReconciliation.mutate();
+    }}
+  >
+    <Select aria-label="選擇來源持倉" bind:value={reconciliationPositionId}>
+      <option value="">選擇來源持倉</option>
+      {#each $positions.data ?? [] as position (position.id)}<option
+          value={position.id}
+          >{position.symbol ?? position.name} · {position.connectorId ??
+            position.investmentAccountId ??
+            "source"}</option
+        >{/each}
+    </Select>
+    <Input
+      aria-label="經濟標的識別"
+      placeholder="手動連結識別，例如 TSM-ACCOUNT-01"
+      bind:value={economicSecurityId}
+    />
+    <Select aria-label="觀測範圍" bind:value={observationCoverage}
+      ><option value="complete">完整持倉</option><option value="subset"
+        >部分／保管觀測</option
+      ></Select
+    >
+    <Button
+      type="submit"
+      variant="secondary"
+      disabled={!reconciliationPositionId || $linkReconciliation.isPending}
+      >儲存連結</Button
+    >
+    <p class="text-caption text-subtle sm:col-span-4">
+      只有相同手動識別的來源會合併；完整持倉優先，否則明確標記的部分觀測相加。股票代號相同不會自動合併。
+    </p>
+  </form>
   {#if error}<p class="mt-3 text-sm text-coral" role="alert">{error}</p>{/if}
 </details>

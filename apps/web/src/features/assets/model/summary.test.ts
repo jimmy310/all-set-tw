@@ -98,7 +98,7 @@ describe("calculateAssetSummary", () => {
       rates: [],
     });
 
-    expect(summary.grossAssets).toBe(0);
+    expect(summary.grossAssets).toBeNull();
     expect(summary.missingCurrencies).toEqual(["JPY", "USD"]);
   });
 
@@ -166,6 +166,46 @@ describe("calculateAssetSummary", () => {
       rates: [],
     });
 
-    expect(summary.missingCurrencies).toEqual(["SGD"]);
+    expect(summary.missingCurrencies).toEqual(["CNY", "SGD"]);
+  });
+
+  it("includes mortgage and credit-card balances in the same Assets-page net worth", () => {
+    const summary = calculateAssetSummary({
+      bank: {
+        accounts: [
+          {
+            id: "card",
+            connectorId: "esun",
+            sourceId: "card",
+            accountType: "credit",
+            balance: -100_000,
+            currency: "TWD",
+          },
+        ],
+        transactions: [],
+      },
+      investments: [],
+      manualAssets: [
+        {
+          id: "home",
+          name: "House",
+          category: "real_estate",
+          note: null,
+          currency: "TWD",
+          createdAt: "2026-09-23",
+          value: 20_000_000,
+        },
+      ],
+      liabilities: [
+        {
+          liabilityType: "mortgage",
+          outstandingPrincipal: 6_000_000,
+          accruedInterest: 0,
+          currency: "TWD",
+        },
+      ],
+      rates: [],
+    });
+    expect(summary.netWorth).toBe(13_900_000);
   });
 });

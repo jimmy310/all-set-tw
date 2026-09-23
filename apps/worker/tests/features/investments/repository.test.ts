@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestD1 } from "../../../../../packages/db/testing/d1";
 import * as repository from "../../../src/features/investments/repository";
+import { setPositionReconciliation } from "../../../src/features/investments/repository";
 
 const now = "2026-09-12T00:00:00.000Z";
 
@@ -16,6 +17,7 @@ describe("investment repository", () => {
     await harness.binding.batch([
       harness.binding.prepare("DELETE FROM investment_transactions"),
       harness.binding.prepare("DELETE FROM investment_positions"),
+      harness.binding.prepare("DELETE FROM investment_accounts"),
     ]);
   });
 
@@ -157,5 +159,84 @@ describe("investment repository", () => {
         ])
       ).map((row) => row.id),
     ).toEqual(["sep-new", "sep-old"]);
+  });
+
+  it("retains latest positions independently for each manual brokerage account and all securities", async () => {
+    for (const id of ["ibkr", "yuanta"])
+      await harness.binding
+        .prepare(
+          "INSERT INTO investment_accounts (id, connector_id, source_id, provider, account_type, display_name, currency, created_at, updated_at) VALUES (?, 'manual', ?, 'broker', 'brokerage', ?, 'USD', ?, ?)",
+        )
+        .bind(id, id, id, now, now)
+        .run();
+    for (const [id, accountId, date] of [
+      ["ibkr-tsm", "ibkr", "2026-09-23"],
+      ["ibkr-aapl", "ibkr", "2026-09-23"],
+      ["yuanta-tsm", "yuanta", "2026-09-22"],
+      ["yuanta-msft", "yuanta", "2026-09-22"],
+    ])
+      await harness.binding
+        .prepare(
+          "INSERT INTO investment_positions (id, connector_id, source_id, asset_type, name, currency, as_of_date, created_at, updated_at, investment_account_id) VALUES (?, 'manual', ?, 'stock', ?, 'USD', ?, ?, ?, ?)",
+        )
+        .bind(id, id, id, date, now, now, accountId)
+        .run();
+    expect(
+      (await repository.listLatestInvestmentPositions(harness.binding, 20))
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual(["ibkr-tsm", "ibkr-aapl", "yuanta-tsm", "yuanta-msft"].sort());
+  });
+
+  it("accepts option transaction type and contract identity metadata", async () => {
+    await trade({
+      id: "option-trade",
+      sourceId: "option-trade",
+      tradeDate: "2026-09-23",
+    });
+    await harness.binding
+      .prepare(
+        "UPDATE investment_transactions SET asset_type = 'option', underlying_symbol = 'TSM', expiration_date = '2028-12-15', strike_price = 280, option_right = 'call', contract_symbol = 'TSM281215C00280000', external_contract_id = 'broker-contract-1' WHERE id = 'option-trade'",
+      )
+      .run();
+    const [transaction] = await repository.listInvestmentTransactions(
+      harness.binding,
+      10,
+    );
+    expect(transaction).toMatchObject({
+      assetType: "option",
+      underlyingSymbol: "TSM",
+      expirationDate: "2028-12-15",
+      strikePrice: 280,
+      optionRight: "call",
+      contractSymbol: "TSM281215C00280000",
+      externalContractId: "broker-contract-1",
+    });
+  });
+
+  it("stores explicit economic identity and observation coverage without matching on symbol", async () => {
+    await position({
+      id: "linked-source",
+      sourceId: "source:2330",
+      assetType: "stock",
+      name: "2330",
+      asOfDate: "2026-09-23",
+    });
+    await setPositionReconciliation(
+      harness.binding,
+      "linked-source",
+      "manual-economic-id:2330:account-a",
+      "subset",
+    );
+    const [row] = await repository.listLatestInvestmentPositions(
+      harness.binding,
+      10,
+    );
+    expect(row).toMatchObject({
+      economicSecurityId: "manual-economic-id:2330:account-a",
+      observationCoverage: "subset",
+      sourceId: "source:2330",
+      connectorId: "tdcc",
+    });
   });
 });

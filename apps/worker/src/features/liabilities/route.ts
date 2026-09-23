@@ -9,6 +9,9 @@ import {
   getLiabilities,
   removeLiability,
   editLiability,
+  getCollateralRelationships,
+  addCollateralRelationship,
+  removeCollateralRelationship,
 } from "./service";
 
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -54,6 +57,39 @@ registerLiabilityRoutes(liabilityRoutes);
 
 function registerLiabilityRoutes(api: Hono<AppBindings>) {
   api.get("/liabilities", async (c) => c.json(await getLiabilities(c.env.DB)));
+  api.get("/collateral-relationships", async (c) =>
+    c.json(await getCollateralRelationships(c.env.DB)),
+  );
+  api.post(
+    "/collateral-relationships",
+    zValidator(
+      "json",
+      z.object({
+        liabilityAccountId: z.string().min(1),
+        assetType: z.enum([
+          "investment_position",
+          "manual_asset",
+          "bank_account",
+          "other",
+        ]),
+        assetId: z.string().min(1),
+        collateralValue: z.number().int().nonnegative().nullable().optional(),
+        currency: z
+          .string()
+          .regex(/^[A-Z]{3}$/)
+          .default("TWD"),
+      }),
+      validationHook("INVALID_REQUEST", "Collateral relationship is invalid."),
+    ),
+    async (c) => {
+      await addCollateralRelationship(c.env.DB, c.req.valid("json"));
+      return c.json({ success: true });
+    },
+  );
+  api.delete("/collateral-relationships/:id", async (c) => {
+    await removeCollateralRelationship(c.env.DB, c.req.param("id"));
+    return c.json({ success: true });
+  });
   api.post(
     "/liabilities",
     zValidator(

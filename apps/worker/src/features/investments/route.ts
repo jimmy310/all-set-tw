@@ -20,6 +20,11 @@ import {
   addManualInvestmentAccount,
   addManualInvestmentPosition,
   getInvestmentAccounts,
+  editManualInvestmentAccount,
+  removeManualInvestmentAccount,
+  editManualInvestmentPosition,
+  removeManualInvestmentPosition,
+  linkPositionReconciliation,
 } from "./service";
 
 const investmentPageCursorSchema = z.object({
@@ -64,8 +69,8 @@ const manualPositionSchema = z
     ]),
     symbol: z.string().trim().max(40).nullable().optional(),
     name: z.string().trim().min(1).max(120),
-    quantity: z.number().finite().nonnegative().nullable().optional(),
-    marketValue: z.number().int().nonnegative().nullable().optional(),
+    quantity: z.number().finite().nullable().optional(),
+    marketValue: z.number().int().nullable().optional(),
     currency: z.string().regex(/^[A-Z]{3}$/),
     averageCost: z.number().finite().nonnegative().nullable().optional(),
     costBasis: z.number().int().nonnegative().nullable().optional(),
@@ -73,11 +78,47 @@ const manualPositionSchema = z
       .enum(["free", "collateral", "margin", "restricted"])
       .default("free"),
     asOfDate: dateSchema,
+    underlyingSymbol: z.string().trim().max(40).nullable().optional(),
+    expirationDate: dateSchema.nullable().optional(),
+    strikePrice: z.number().finite().nonnegative().nullable().optional(),
+    optionRight: z.enum(["call", "put"]).nullable().optional(),
+    contractMultiplier: z.number().finite().positive().default(1),
+    contractSymbol: z.string().trim().max(120).nullable().optional(),
+    optionMarkPrice: z.number().finite().nonnegative().nullable().optional(),
+    economicSecurityId: z.string().trim().min(1).max(160).nullable().optional(),
+    observationCoverage: z.enum(["complete", "subset"]).default("complete"),
   })
-  .refine(
-    (body) => body.marketValue !== undefined || body.quantity !== undefined,
-    "Provide a quantity or valuation.",
-  );
+  .superRefine((body, ctx) => {
+    if (
+      body.marketValue == null &&
+      body.quantity == null &&
+      body.optionMarkPrice == null
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Provide a quantity or valuation.",
+      });
+    if (
+      body.assetType !== "option" &&
+      ((body.quantity ?? 0) < 0 || (body.marketValue ?? 0) < 0)
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Only options may use signed quantity or market value.",
+      });
+    if (
+      body.assetType === "option" &&
+      (body.underlyingSymbol == null ||
+        body.expirationDate == null ||
+        body.strikePrice == null ||
+        body.optionRight == null)
+    )
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "Options require underlying, expiration, strike, and call/put right.",
+      });
+  });
 
 export const investmentRoutes = honoFactory.createApp();
 registerInvestmentRoutes(investmentRoutes);
@@ -99,6 +140,41 @@ function registerInvestmentRoutes(api: Hono<AppBindings>) {
         id: await addManualInvestmentAccount(c.env.DB, c.req.valid("json")),
       }),
   );
+  api.put(
+    "/investment-accounts/:id",
+    zValidator(
+      "json",
+      accountSchema,
+      validationHook("INVALID_REQUEST", "Investment account is invalid."),
+    ),
+    async (c) => {
+      await editManualInvestmentAccount(
+        c.env.DB,
+        c.req.param("id"),
+        c.req.valid("json"),
+      );
+      return c.json({ success: true });
+    },
+  );
+  api.delete("/investment-accounts/:id", async (c) => {
+    const deleted = await removeManualInvestmentAccount(
+      c.env.DB,
+      c.req.param("id"),
+    );
+    if (!deleted)
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "ACCOUNT_HAS_POSITIONS",
+            message:
+              "Remove or reassign all positions before deleting this account.",
+          },
+        },
+        409,
+      );
+    return c.json({ success: true });
+  });
 
   api.post(
     "/investments/manual",
@@ -111,6 +187,60 @@ function registerInvestmentRoutes(api: Hono<AppBindings>) {
       c.json({
         id: await addManualInvestmentPosition(c.env.DB, c.req.valid("json")),
       }),
+  );
+  api.put(
+    "/investments/manual/:id",
+    zValidator(
+      "json",
+      manualPositionSchema,
+      validationHook("INVALID_REQUEST", "Investment position is invalid."),
+    ),
+    async (c) => {
+      await editManualInvestmentPosition(
+        c.env.DB,
+        c.req.param("id"),
+        c.req.valid("json"),
+      );
+      return c.json({ success: true });
+    },
+  );
+  api.delete("/investments/manual/:id", async (c) => {
+    const deleted = await removeManualInvestmentPosition(
+      c.env.DB,
+      c.req.param("id"),
+    );
+    if (!deleted)
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "POSITION_IS_COLLATERAL",
+            message:
+              "Remove the collateral link before deleting this position.",
+          },
+        },
+        409,
+      );
+    return c.json({ success: true });
+  });
+  api.put(
+    "/investments/:id/reconciliation",
+    zValidator(
+      "json",
+      z.object({
+        economicSecurityId: z.string().trim().min(1).max(160).nullable(),
+        observationCoverage: z.enum(["complete", "subset"]),
+      }),
+      validationHook("INVALID_REQUEST", "Position reconciliation is invalid."),
+    ),
+    async (c) => {
+      await linkPositionReconciliation(
+        c.env.DB,
+        c.req.param("id"),
+        c.req.valid("json"),
+      );
+      return c.json({ success: true });
+    },
   );
 
   api.get("/investments", async (c) => {

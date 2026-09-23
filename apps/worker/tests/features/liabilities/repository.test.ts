@@ -4,6 +4,9 @@ import {
   deleteLiability,
   listLiabilities,
   updateLiability,
+  createCollateralRelationship,
+  deleteCollateralRelationship,
+  listCollateralRelationships,
 } from "../../../src/features/liabilities/repository";
 import { createTestD1 } from "../../../../../packages/db/testing/d1";
 
@@ -108,6 +111,15 @@ describe("liability repository", () => {
         "now",
       )
       .run();
+    await expect(listCollateralRelationships(harness.binding)).resolves.toEqual(
+      [
+        expect.objectContaining({
+          liabilityAccountId: "manual-liability:pledge",
+          assetType: "investment_position",
+          assetId: "holding-1",
+        }),
+      ],
+    );
     await updateLiability(
       harness.binding,
       "manual-liability:pledge",
@@ -128,5 +140,45 @@ describe("liability repository", () => {
     await expect(
       harness.binding.prepare("SELECT id FROM collateral_relationships").all(),
     ).resolves.toMatchObject({ results: [] });
+  });
+
+  it("creates, reads, and deletes a manual home collateral link while preserving asset and loan accounting", async () => {
+    await createLiability(harness.binding, {
+      id: "manual-liability:mortgage",
+      liabilityType: "mortgage",
+      provider: null,
+      name: "House mortgage",
+      maskedIdentity: null,
+      currency: "TWD",
+      originalPrincipal: 8_000_000,
+      interestRate: null,
+      interestRateType: null,
+      startDate: null,
+      maturityDate: null,
+      monthlyPayment: null,
+      nextPaymentDate: null,
+      outstandingPrincipal: 6_000_000,
+      accruedInterest: null,
+      asOfAt: "2026-09-23T23:59:59.999Z",
+      now: "2026-09-23T00:00:00.000Z",
+    });
+    await createCollateralRelationship(harness.binding, {
+      id: "link-house",
+      liabilityAccountId: "manual-liability:mortgage",
+      assetType: "manual_asset",
+      assetId: "house-1",
+      collateralValue: 20_000_000,
+      currency: "TWD",
+      now: "2026-09-23T00:00:00.000Z",
+    });
+    expect(await listCollateralRelationships(harness.binding)).toHaveLength(1);
+    await expect(listLiabilities(harness.binding)).resolves.toEqual([
+      expect.objectContaining({
+        id: "manual-liability:mortgage",
+        outstandingPrincipal: 6_000_000,
+      }),
+    ]);
+    await deleteCollateralRelationship(harness.binding, "link-house");
+    expect(await listCollateralRelationships(harness.binding)).toHaveLength(0);
   });
 });

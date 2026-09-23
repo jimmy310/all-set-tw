@@ -9,9 +9,9 @@
 ## 目錄
 
 - Tables：35
-- Explicit indexes：49
+- Explicit indexes：50
 - Other objects：0
-- Migrations：46
+- Migrations：47
 
 ## Tables
 
@@ -31,8 +31,8 @@
 | [`einvoice_sync_runs`](#einvoice_sync_runs) | 電子發票跨 Queue invocation 執行的持久化同步記錄。 | 21 | 2 | 2 |
 | [`exchange_rates`](#exchange_rates) | 將外幣換算為新台幣時使用的最新匯率。 | 3 | 0 | 0 |
 | [`investment_accounts`](#investment_accounts) | 券商、複委託或證券融資等投資帳戶識別。 | 11 | 0 | 1 |
-| [`investment_positions`](#investment_positions) | 投資帳戶在特定日期的持倉與資產市值快照。 | 19 | 1 | 5 |
-| [`investment_transactions`](#investment_transactions) | 投資帳戶的買賣、配息或其他證券交易明細。 | 22 | 0 | 3 |
+| [`investment_positions`](#investment_positions) | 投資帳戶在特定日期的持倉與資產市值快照。 | 28 | 1 | 6 |
+| [`investment_transactions`](#investment_transactions) | 投資帳戶的買賣、配息或其他證券交易明細。 | 28 | 0 | 3 |
 | [`invoice_line_items`](#invoice_line_items) | 電子發票底下的商品或服務明細。 | 13 | 1 | 2 |
 | [`invoice_transaction_preferences`](#invoice_transaction_preferences) | 使用者對電子發票與銀行交易是否關聯的決策。 | 5 | 2 | 2 |
 | [`invoices`](#invoices) | 電子發票的抬頭與總額主檔。 | 10 | 0 | 2 |
@@ -795,7 +795,7 @@ CREATE TABLE investment_accounts (
 ### `investment_positions`
 
 > 用途：投資帳戶在特定日期的持倉與資產市值快照。
-> 注意：同一 connector、source 與日期可有一組持倉；最新持倉與分頁查詢依 as_of_date。
+> 注意：手動投資帳戶各自依帳戶與資產類別選最新快照；舊 connector 資料維持 connector 範圍。跨來源只以明確 economic_security_id 合併，不依 symbol 猜測。
 
 #### Columns
 
@@ -820,6 +820,15 @@ CREATE TABLE investment_accounts (
 | 17 | `average_cost` | 來源提供時的每單位平均成本。 | REAL | YES | — | — | — |
 | 18 | `cost_basis` | 來源提供時的成本基礎。 | INTEGER | YES | — | — | — |
 | 19 | `valuation_source` | 估值來源標記；不代表未知估值為零。 | TEXT | NO | 'source' | — | — |
+| 20 | `underlying_symbol` | 選擇權的標的代號。 | TEXT | YES | — | — | — |
+| 21 | `expiration_date` | 選擇權到期日。 | TEXT | YES | — | — | — |
+| 22 | `strike_price` | 選擇權履約價，保留小數精度。 | REAL | YES | — | — | — |
+| 23 | `option_right` | 選擇權方向：call 或 put。 | TEXT | YES | — | — | — |
+| 24 | `contract_multiplier` | 每口合約代表的標的數量；調整型合約可使用非 100 乘數。 | REAL | NO | 1 | — | — |
+| 25 | `contract_symbol` | 來源提供的完整合約代號。 | TEXT | YES | — | — | — |
+| 26 | `option_mark_price` | 來源或手動輸入的每單位選擇權標記價格。 | REAL | YES | — | — | — |
+| 27 | `economic_security_id` | 使用者明確指定的跨來源經濟標的識別碼；不由股票代號推測。 | TEXT | YES | — | — | — |
+| 28 | `observation_coverage` | 完整持倉或部分／保管觀測；同一明確識別碼下完整觀測優先。 | TEXT | NO | 'complete' | — | — |
 
 #### Foreign keys
 
@@ -831,6 +840,7 @@ CREATE TABLE investment_accounts (
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
+| `idx_investment_positions_economic_security` | 否 | 否 | `economic_security_id`, `as_of_date` | `CREATE INDEX idx_investment_positions_economic_security ON investment_positions (economic_security_id, as_of_date DESC)` |
 | `idx_investment_positions_account_date` | 否 | 否 | `investment_account_id`, `as_of_date` | `CREATE INDEX idx_investment_positions_account_date ON investment_positions (investment_account_id, as_of_date DESC)` |
 | `idx_investment_positions_as_of_date` | 否 | 否 | `as_of_date` | `CREATE INDEX idx_investment_positions_as_of_date ON investment_positions (as_of_date)` |
 | `idx_investment_positions_asset_type` | 否 | 否 | `asset_type` | `CREATE INDEX idx_investment_positions_asset_type ON investment_positions (asset_type)` |
@@ -859,7 +869,7 @@ CREATE TABLE "investment_positions" (
   custody_status TEXT NOT NULL DEFAULT 'free' CHECK (custody_status IN ('free', 'collateral', 'margin', 'restricted')),
   average_cost REAL,
   cost_basis INTEGER,
-  valuation_source TEXT NOT NULL DEFAULT 'source',
+  valuation_source TEXT NOT NULL DEFAULT 'source', underlying_symbol TEXT, expiration_date TEXT, strike_price REAL, option_right TEXT CHECK (option_right IS NULL OR option_right IN ('call', 'put')), contract_multiplier REAL NOT NULL DEFAULT 1 CHECK (contract_multiplier > 0), contract_symbol TEXT, option_mark_price REAL, economic_security_id TEXT, observation_coverage TEXT NOT NULL DEFAULT 'complete' CHECK (observation_coverage IN ('complete', 'subset')),
   UNIQUE (connector_id, source_id, as_of_date)
 )
 ```
@@ -882,7 +892,7 @@ CREATE TABLE "investment_positions" (
 | 7 | `broker_name` | 券商或交易機構名稱。 | TEXT | YES | — | — | — |
 | 8 | `symbol` | 交易標的代號。 | TEXT | YES | — | — | — |
 | 9 | `name` | 交易標的名稱。 | TEXT | YES | — | — | — |
-| 10 | `asset_type` | 資產類型，例如 stock、etf、fund、bond 或 unknown。 | TEXT | YES | — | — | — |
+| 10 | `asset_type` | 資產類型，支援 stock、etf、fund、bond、option、cash、future、crypto、other 或 unknown。 | TEXT | YES | — | — | — |
 | 11 | `trade_date` | 交易發生日期。 | TEXT | YES | — | — | — |
 | 12 | `posted_date` | 交易正式入帳日期。 | TEXT | YES | — | — | — |
 | 13 | `transaction_code` | 外部系統的交易類型代碼。 | TEXT | YES | — | — | — |
@@ -895,6 +905,12 @@ CREATE TABLE "investment_positions" (
 | 20 | `created_at` | 交易首次寫入的時間。 | TEXT | NO | — | — | — |
 | 21 | `updated_at` | 交易最後更新的時間。 | TEXT | NO | — | — | — |
 | 22 | `effective_date` | 由 trade_date 優先、posted_date 備援產生的排序日期。 | TEXT | YES | — | — | virtual |
+| 23 | `underlying_symbol` | 選擇權交易的標的代號。 | TEXT | YES | — | — | — |
+| 24 | `expiration_date` | 選擇權合約到期日。 | TEXT | YES | — | — | — |
+| 25 | `strike_price` | 選擇權履約價。 | REAL | YES | — | — | — |
+| 26 | `option_right` | 選擇權方向：call 或 put。 | TEXT | YES | — | — | — |
+| 27 | `contract_symbol` | 外部來源提供的完整選擇權合約代號。 | TEXT | YES | — | — | — |
+| 28 | `external_contract_id` | 來源端選擇權合約識別碼。 | TEXT | YES | — | — | — |
 
 #### Foreign keys
 
@@ -904,9 +920,9 @@ CREATE TABLE "investment_positions" (
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
-| `idx_investment_transactions_trade_date` | 否 | 否 | `trade_date` | `CREATE INDEX idx_investment_transactions_trade_date<br>  ON investment_transactions (trade_date)` |
-| `idx_investment_transactions_symbol` | 否 | 否 | `symbol` | `CREATE INDEX idx_investment_transactions_symbol<br>  ON investment_transactions (symbol)` |
-| `idx_investment_transactions_effective_updated` | 否 | 否 | `effective_date`, `updated_at`, `id` | `CREATE INDEX idx_investment_transactions_effective_updated<br>  ON investment_transactions (effective_date DESC, updated_at DESC, id DESC)` |
+| `idx_investment_transactions_trade_date` | 否 | 否 | `trade_date` | `CREATE INDEX idx_investment_transactions_trade_date ON investment_transactions (trade_date)` |
+| `idx_investment_transactions_symbol` | 否 | 否 | `symbol` | `CREATE INDEX idx_investment_transactions_symbol ON investment_transactions (symbol)` |
+| `idx_investment_transactions_effective_updated` | 否 | 否 | `effective_date`, `updated_at`, `id` | `CREATE INDEX idx_investment_transactions_effective_updated<br>  ON investment_transactions (effective_date DESC, updated_at DESC, id DESC)` |
 
 #### DDL
 
@@ -921,7 +937,7 @@ CREATE TABLE "investment_transactions" (
   broker_name TEXT,
   symbol TEXT,
   name TEXT,
-  asset_type TEXT CHECK (asset_type IN ('stock', 'etf', 'fund', 'bond', 'unknown')),
+  asset_type TEXT CHECK (asset_type IN ('stock', 'etf', 'fund', 'bond', 'option', 'cash', 'future', 'crypto', 'other', 'unknown')),
   trade_date TEXT,
   posted_date TEXT,
   transaction_code TEXT,
@@ -932,7 +948,14 @@ CREATE TABLE "investment_transactions" (
   currency TEXT NOT NULL DEFAULT 'TWD',
   raw_payload TEXT,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL, effective_date TEXT AS (COALESCE(trade_date, posted_date, '')),
+  updated_at TEXT NOT NULL,
+  effective_date TEXT AS (COALESCE(trade_date, posted_date, '')),
+  underlying_symbol TEXT,
+  expiration_date TEXT,
+  strike_price REAL,
+  option_right TEXT CHECK (option_right IS NULL OR option_right IN ('call', 'put')),
+  contract_symbol TEXT,
+  external_contract_id TEXT,
   UNIQUE (connector_id, account_id, source_id)
 )
 ```
@@ -1902,6 +1925,7 @@ Migration 是 schema 演進的 source of truth；若要了解某欄位的變更�
 - [`0046_transaction_self_foreign_keys.sql`](../packages/db/migrations/0046_transaction_self_foreign_keys.sql)
 - [`0047_sync_activity_details.sql`](../packages/db/migrations/0047_sync_activity_details.sql)
 - [`0048_personal_balance_sheet.sql`](../packages/db/migrations/0048_personal_balance_sheet.sql)
+- [`0049_balance_sheet_repair_options_and_observations.sql`](../packages/db/migrations/0049_balance_sheet_repair_options_and_observations.sql)
 
 ## 程式碼導覽
 

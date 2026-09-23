@@ -4,7 +4,12 @@
     createQuery,
     useQueryClient,
   } from "@tanstack/svelte-query";
-  import { liabilitiesQuery } from "@/data/assets/queries";
+  import {
+    liabilitiesQuery,
+    collateralRelationshipsQuery,
+    manualAssetsQuery,
+  } from "@/data/assets/queries";
+  import { investmentsQuery } from "@/data/investments/queries";
   import type { LiabilityRow } from "@/data/assets/types";
   import { queryKeys } from "@/shared/api/query-keys";
   import type { ApiClient } from "@/shared/api/client";
@@ -19,6 +24,9 @@
   let { api }: { api: ApiClient } = $props();
   const qc = useQueryClient();
   const liabilities = createQuery(liabilitiesQuery(() => api));
+  const collateral = createQuery(collateralRelationshipsQuery(() => api));
+  const assets = createQuery(manualAssetsQuery(() => api));
+  const positions = createQuery(investmentsQuery(() => api));
   const types = {
     mortgage: "房貸",
     personal_loan: "個人信貸",
@@ -35,6 +43,40 @@
   let asOfDate = $state(todayStr());
   let editingId = $state<string | null>(null);
   let error = $state("");
+  let collateralLiabilityId = $state("");
+  let collateralAssetChoice = $state("");
+  const collateralChoices = $derived([
+    ...($assets.data ?? []).map((asset) => ({
+      value: `manual_asset:${asset.id}`,
+      label: `不動產／其他資產：${asset.name}`,
+    })),
+    ...($positions.data ?? []).map((position) => ({
+      value: `investment_position:${position.id}`,
+      label: `投資：${position.symbol ?? position.name}`,
+    })),
+  ]);
+  const linkCollateral = createMutation({
+    mutationFn: () => {
+      const [assetType, assetId] = collateralAssetChoice.split(":");
+      return api.post("/api/collateral-relationships", {
+        liabilityAccountId: collateralLiabilityId,
+        assetType,
+        assetId,
+        currency: "TWD",
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.collateralRelationships });
+      collateralLiabilityId = "";
+      collateralAssetChoice = "";
+    },
+  });
+  const unlinkCollateral = createMutation({
+    mutationFn: (id: string) =>
+      api.delete(`/api/collateral-relationships/${id}`),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: queryKeys.collateralRelationships }),
+  });
   const save = createMutation({
     mutationFn: () => {
       const body = {
@@ -188,5 +230,59 @@
         {/each}
       </ul>
     {/if}
+    <section
+      class="grid gap-3 rounded-xl border border-border p-4"
+      aria-label="抵押品連結"
+    >
+      <h3 class="font-medium">抵押品連結</h3>
+      <p class="text-sm text-subtle">
+        連結只記錄擔保關係；資產仍計入總資產，貸款仍計入總負債。
+      </p>
+      <div class="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+        <Select aria-label="選擇貸款" bind:value={collateralLiabilityId}>
+          <option value="">選擇貸款</option>
+          {#each $liabilities.data ?? [] as row (row.id)}<option value={row.id}
+              >{row.name}</option
+            >{/each}
+        </Select>
+        <Select aria-label="選擇抵押資產" bind:value={collateralAssetChoice}>
+          <option value="">選擇房產或投資持倉</option>
+          {#each collateralChoices as item (item.value)}<option
+              value={item.value}>{item.label}</option
+            >{/each}
+        </Select>
+        <Button
+          disabled={!collateralLiabilityId ||
+            !collateralAssetChoice ||
+            $linkCollateral.isPending}
+          onclick={() => $linkCollateral.mutate()}>連結</Button
+        >
+      </div>
+      {#if ($collateral.data ?? []).length === 0}<p class="text-sm text-subtle">
+          尚無抵押品連結。
+        </p>{:else}
+        <ul class="divide-y divide-border">
+          {#each $collateral.data ?? [] as relation (relation.id)}
+            {@const asset = collateralChoices.find(
+              (item) =>
+                item.value === `${relation.assetType}:${relation.assetId}`,
+            )}
+            <li class="flex items-center justify-between gap-3 py-2 text-sm">
+              <span
+                >{($liabilities.data ?? []).find(
+                  (row) => row.id === relation.liabilityAccountId,
+                )?.name ?? "貸款"} ← {asset?.label ?? relation.assetType}</span
+              >
+              <Button
+                variant="ghost"
+                size="sm"
+                onclick={() => $unlinkCollateral.mutate(relation.id)}
+                >解除</Button
+              >
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
   </CardContent>
 </Card>

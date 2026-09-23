@@ -2,8 +2,55 @@ import {
   createDrizzle,
   liabilityAccounts,
   liabilityBalanceSnapshots,
+  collateralRelationships,
 } from "@taiwan-fin-hub/db";
 import { asc, eq, sql } from "drizzle-orm";
+
+export function listCollateralRelationships(db: D1Database) {
+  return createDrizzle(db)
+    .select({
+      id: collateralRelationships.id,
+      liabilityAccountId: collateralRelationships.liabilityAccountId,
+      assetType: collateralRelationships.assetType,
+      assetId: collateralRelationships.assetId,
+      collateralValue: collateralRelationships.collateralValue,
+      currency: collateralRelationships.currency,
+    })
+    .from(collateralRelationships)
+    .orderBy(
+      asc(collateralRelationships.liabilityAccountId),
+      asc(collateralRelationships.assetType),
+      asc(collateralRelationships.assetId),
+    )
+    .all();
+}
+
+export async function createCollateralRelationship(
+  db: D1Database,
+  input: {
+    id: string;
+    liabilityAccountId: string;
+    assetType: string;
+    assetId: string;
+    collateralValue: number | null;
+    currency: string;
+    now: string;
+  },
+) {
+  await createDrizzle(db)
+    .insert(collateralRelationships)
+    .values({
+      ...input,
+      createdAt: input.now,
+      updatedAt: input.now,
+    });
+}
+
+export async function deleteCollateralRelationship(db: D1Database, id: string) {
+  await createDrizzle(db)
+    .delete(collateralRelationships)
+    .where(eq(collateralRelationships.id, id));
+}
 
 export async function listLiabilities(db: D1Database) {
   return createDrizzle(db)

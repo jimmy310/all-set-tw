@@ -41,7 +41,10 @@
   } from "@/shared/format/financial";
   import NetWorthHistoryChart from "./components/NetWorthHistoryChart.svelte";
   import LatestSyncReportCard from "./components/LatestSyncReportCard.svelte";
-  import { calculateBalanceSheet } from "@/features/assets/model/balance-sheet";
+  import {
+    calculatePersonalBalanceSheet,
+    investmentPositionValue,
+  } from "@/features/assets/model/balance-sheet";
 
   type InsightTone = "coral" | "amber" | "moss" | "steel";
   type InsightIcon = "sync" | "card" | "cashflow";
@@ -109,8 +112,7 @@
   const investmentTotal = $derived(
     ($investments.data ?? []).reduce(
       (sum, item) =>
-        sum +
-        toTwd((item.marketValue ?? 0) + (item.cashBalance ?? 0), item.currency),
+        sum + toTwd(investmentPositionValue(item) ?? 0, item.currency),
       0,
     ),
   );
@@ -122,39 +124,11 @@
   );
   const gross = $derived(depositTotal + investmentTotal + manualTotal);
   const balanceSheet = $derived(
-    calculateBalanceSheet({
-      assets: [
-        ...deposits.map((account) => ({
-          value: account.balance,
-          currency: account.currency,
-        })),
-        ...($investments.data ?? []).map((item) => ({
-          value:
-            item.marketValue === null && item.cashBalance == null
-              ? null
-              : (item.marketValue ?? 0) + (item.cashBalance ?? 0),
-          currency: item.currency,
-        })),
-        ...($manualAssets.data ?? []).map((item) => ({
-          value: item.value ?? null,
-          currency: item.currency,
-        })),
-      ],
-      liabilities: [
-        ...cards.map((account) => ({
-          value: account.balance == null ? null : Math.abs(account.balance),
-          currency: account.currency,
-        })),
-        ...($liabilities.data ?? [])
-          .filter((item) => item.liabilityType !== "credit_card")
-          .map((item) => ({
-            value:
-              item.outstandingPrincipal == null
-                ? null
-                : item.outstandingPrincipal + (item.accruedInterest ?? 0),
-            currency: item.currency,
-          })),
-      ],
+    calculatePersonalBalanceSheet({
+      bankAccounts: bankData.accounts,
+      investments: $investments.data ?? [],
+      manualAssets: $manualAssets.data ?? [],
+      liabilities: $liabilities.data ?? [],
       rates: rateValues,
     }),
   );
@@ -162,17 +136,41 @@
   const allocation = $derived([
     {
       label: "銀行與現金",
-      value: depositTotal,
+      value: deposits.some(
+        (item) =>
+          item.balance == null ||
+          (item.currency !== "TWD" &&
+            rateValues[item.currency] == null &&
+            item.balance !== 0),
+      )
+        ? null
+        : depositTotal,
       detail: `${deposits.length} 個帳戶`,
     },
     {
       label: "投資",
-      value: investmentTotal,
+      value: ($investments.data ?? []).some(
+        (item) =>
+          investmentPositionValue(item) == null ||
+          (item.currency !== "TWD" &&
+            rateValues[item.currency] == null &&
+            (investmentPositionValue(item) ?? 0) !== 0),
+      )
+        ? null
+        : investmentTotal,
       detail: `${$investments.data?.length ?? 0} 個持倉`,
     },
     {
       label: "其他資產",
-      value: manualTotal,
+      value: ($manualAssets.data ?? []).some(
+        (item) =>
+          item.value == null ||
+          (item.currency !== "TWD" &&
+            rateValues[item.currency] == null &&
+            item.value !== 0),
+      )
+        ? null
+        : manualTotal,
       detail: "保險、房產",
     },
   ]);
@@ -314,7 +312,7 @@
             })),
             ...($investments.data ?? []).map((item) => ({
               currency: item.currency,
-              amount: (item.marketValue ?? 0) + (item.cashBalance ?? 0),
+              amount: investmentPositionValue(item) ?? 0,
             })),
             ...($manualAssets.data ?? []).map((item) => ({
               currency: item.currency,
@@ -416,12 +414,12 @@
             <p
               class="mt-2 text-lg font-medium tracking-tight tabular-nums md:hidden"
             >
-              {formatCompactTwd(item.value)}
+              {item.value == null ? "資料不完整" : formatCompactTwd(item.value)}
             </p>
             <p
               class="mt-2 hidden break-all text-2xl font-semibold tracking-tight tabular-nums md:block"
             >
-              {formatCurrency(item.value)}
+              {item.value == null ? "資料不完整" : formatCurrency(item.value)}
             </p>
             <p class="mt-1 text-caption text-subtle">
               {item.detail}

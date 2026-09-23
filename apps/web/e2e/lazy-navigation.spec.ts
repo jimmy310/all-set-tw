@@ -18,6 +18,7 @@ test.beforeEach(async ({ page }) => {
     else if (path === "/api/activity/invoice-mappings") body = [];
     else if (path === "/api/manual-assets") body = [];
     else if (path === "/api/liabilities") body = [];
+    else if (path === "/api/collateral-relationships") body = [];
     else if (path === "/api/exchange-rates") body = [];
     else if (path === "/api/classification/categories") body = [];
     else throw new Error(`Unexpected API request in lazy-page test: ${path}`);
@@ -32,7 +33,9 @@ test.beforeEach(async ({ page }) => {
 test("loads a non-overview page on demand", async ({ page }) => {
   await page.goto("/#/assets");
 
-  await expect(page.getByText("尚無資產資料", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("其他資產與負債", { exact: true }).first(),
+  ).toBeVisible();
 });
 
 test("shows a retry action when a lazy page fails to load", async ({

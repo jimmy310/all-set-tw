@@ -1,6 +1,11 @@
 import {
   createManualInvestmentAccount as createManualInvestmentAccountRecord,
   createManualInvestmentPosition as createManualInvestmentPositionRecord,
+  updateManualInvestmentAccount as updateManualInvestmentAccountRecord,
+  deleteManualInvestmentAccount as deleteManualInvestmentAccountRecord,
+  updateManualInvestmentPosition as updateManualInvestmentPositionRecord,
+  deleteManualInvestmentPosition as deleteManualInvestmentPositionRecord,
+  setPositionReconciliation as setPositionReconciliationRecord,
   listInvestmentAccounts as listInvestmentAccountRecords,
   listInvestmentTransactions,
   listInvestmentTransactionsInRange,
@@ -50,20 +55,155 @@ export async function addManualInvestmentPosition(
     costBasis?: number | null;
     custodyStatus: string;
     asOfDate: string;
+    underlyingSymbol?: string | null;
+    expirationDate?: string | null;
+    strikePrice?: number | null;
+    optionRight?: string | null;
+    contractMultiplier?: number;
+    contractSymbol?: string | null;
+    optionMarkPrice?: number | null;
+    economicSecurityId?: string | null;
+    observationCoverage?: string;
   },
 ) {
   const id = `manual-investment-position:${crypto.randomUUID()}`;
+  const positionMarketValue =
+    input.marketValue ??
+    (input.assetType === "option" &&
+    input.quantity != null &&
+    input.optionMarkPrice != null
+      ? Math.round(
+          input.quantity *
+            (input.contractMultiplier ?? 100) *
+            input.optionMarkPrice,
+        )
+      : null);
   await createManualInvestmentPositionRecord(db, {
     ...input,
     id,
     symbol: input.symbol ?? null,
     quantity: input.quantity ?? null,
-    marketValue: input.marketValue ?? null,
+    marketValue: positionMarketValue,
     averageCost: input.averageCost ?? null,
     costBasis: input.costBasis ?? null,
     now: new Date().toISOString(),
+    underlyingSymbol: input.underlyingSymbol ?? null,
+    expirationDate: input.expirationDate ?? null,
+    strikePrice: input.strikePrice ?? null,
+    optionRight: input.optionRight ?? null,
+    contractMultiplier: input.contractMultiplier ?? 1,
+    contractSymbol: input.contractSymbol ?? null,
+    optionMarkPrice: input.optionMarkPrice ?? null,
+    economicSecurityId: input.economicSecurityId ?? null,
+    observationCoverage: input.observationCoverage ?? "complete",
   });
   return id;
+}
+
+export function editManualInvestmentAccount(
+  db: D1Database,
+  id: string,
+  input: {
+    provider: string;
+    accountType: string;
+    displayName: string;
+    maskedIdentity?: string | null;
+    currency: string;
+    market?: string | null;
+  },
+) {
+  return updateManualInvestmentAccountRecord(
+    db,
+    id,
+    {
+      ...input,
+      maskedIdentity: input.maskedIdentity ?? null,
+      market: input.market ?? null,
+    },
+    new Date().toISOString(),
+  );
+}
+
+export function removeManualInvestmentAccount(db: D1Database, id: string) {
+  return deleteManualInvestmentAccountRecord(db, id);
+}
+
+export function editManualInvestmentPosition(
+  db: D1Database,
+  id: string,
+  input: Parameters<typeof addManualInvestmentPosition>[1],
+) {
+  const {
+    accountId,
+    assetType,
+    symbol,
+    name,
+    quantity,
+    marketValue,
+    currency,
+    averageCost,
+    costBasis,
+    custodyStatus,
+    asOfDate,
+    underlyingSymbol,
+    expirationDate,
+    strikePrice,
+    optionRight,
+    contractMultiplier,
+    contractSymbol,
+    optionMarkPrice,
+    economicSecurityId,
+    observationCoverage,
+  } = input;
+  const positionMarketValue =
+    marketValue ??
+    (assetType === "option" && quantity != null && optionMarkPrice != null
+      ? Math.round(quantity * (contractMultiplier ?? 100) * optionMarkPrice)
+      : null);
+  return updateManualInvestmentPositionRecord(
+    db,
+    id,
+    {
+      accountId,
+      assetType,
+      symbol: symbol ?? null,
+      name,
+      quantity: quantity ?? null,
+      marketValue: positionMarketValue,
+      currency,
+      averageCost: averageCost ?? null,
+      costBasis: costBasis ?? null,
+      custodyStatus,
+      asOfDate,
+      underlyingSymbol: underlyingSymbol ?? null,
+      expirationDate: expirationDate ?? null,
+      strikePrice: strikePrice ?? null,
+      optionRight: optionRight ?? null,
+      contractMultiplier: contractMultiplier ?? 1,
+      contractSymbol: contractSymbol ?? null,
+      optionMarkPrice: optionMarkPrice ?? null,
+      economicSecurityId: economicSecurityId ?? null,
+      observationCoverage: observationCoverage ?? "complete",
+    },
+    new Date().toISOString(),
+  );
+}
+
+export function removeManualInvestmentPosition(db: D1Database, id: string) {
+  return deleteManualInvestmentPositionRecord(db, id);
+}
+
+export function linkPositionReconciliation(
+  db: D1Database,
+  id: string,
+  input: { economicSecurityId: string | null; observationCoverage: string },
+) {
+  return setPositionReconciliationRecord(
+    db,
+    id,
+    input.economicSecurityId,
+    input.observationCoverage,
+  );
 }
 
 export async function getInvestmentPage(

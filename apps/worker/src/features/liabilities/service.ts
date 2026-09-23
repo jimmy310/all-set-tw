@@ -3,6 +3,9 @@ import {
   deleteLiability,
   listLiabilities,
   updateLiability,
+  listCollateralRelationships,
+  createCollateralRelationship,
+  deleteCollateralRelationship,
 } from "./repository";
 
 export function getLiabilities(db: D1Database) {
@@ -82,4 +85,31 @@ export function editLiability(
 
 export function removeLiability(db: D1Database, id: string) {
   return deleteLiability(db, id);
+}
+
+export function getCollateralRelationships(db: D1Database) {
+  return listCollateralRelationships(db);
+}
+
+export function addCollateralRelationship(
+  db: D1Database,
+  input: {
+    liabilityAccountId: string;
+    assetType: string;
+    assetId: string;
+    collateralValue?: number | null;
+    currency: string;
+  },
+) {
+  const now = new Date().toISOString();
+  return createCollateralRelationship(db, {
+    ...input,
+    collateralValue: input.collateralValue ?? null,
+    id: `collateral:${crypto.randomUUID()}`,
+    now,
+  });
+}
+
+export function removeCollateralRelationship(db: D1Database, id: string) {
+  return deleteCollateralRelationship(db, id);
 }

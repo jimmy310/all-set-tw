@@ -3,6 +3,9 @@
     InvestmentRow,
     InvestmentTransactionRow,
   } from "@/data/investments/types";
+  import type { ApiClient } from "@/shared/api/client";
+  import ManualInvestments from "./ManualInvestments.svelte";
+  import { investmentPositionValue } from "../model/balance-sheet";
   import {
     formatCurrency,
     formatDate,
@@ -11,6 +14,7 @@
 
   let {
     positions,
+    api,
     trades,
     total,
     tradesPending = false,
@@ -18,6 +22,7 @@
     compact = false,
   }: {
     positions: InvestmentRow[];
+    api: ApiClient;
     trades: InvestmentTransactionRow[];
     total: number;
     tradesPending?: boolean;
@@ -33,9 +38,27 @@
     if (trade.quantity != null) return `${formatNumber(trade.quantity)} 股`;
     return "金額未提供";
   }
+
+  function positionTitle(position: InvestmentRow) {
+    if (position.assetType !== "option")
+      return `${position.symbol ? `${position.symbol} ` : ""}${position.name}`;
+    const underlying =
+      position.underlyingSymbol ?? position.symbol ?? "標的未知";
+    const expiry = position.expirationDate ?? "到期日未知";
+    const strike =
+      position.strikePrice == null ? "履約價未知" : position.strikePrice;
+    const right =
+      position.optionRight === "call"
+        ? "Call"
+        : position.optionRight === "put"
+          ? "Put"
+          : "選擇權";
+    return `${underlying} ${expiry} ${strike} ${right}`;
+  }
 </script>
 
 <div class={compact ? "grid gap-3" : "flex min-h-full flex-col"}>
+  <div class={compact ? "px-0" : "px-5 pt-4"}><ManualInvestments {api} /></div>
   {#if !compact}
     <header class="border-b border-ink/10 px-5 py-4">
       <p class="text-caption font-medium text-subtle">投資</p>
@@ -91,18 +114,22 @@
             >
               <div class="min-w-0">
                 <p class="break-words text-sm font-semibold">
-                  {position.symbol ? `${position.symbol} ` : ""}{position.name}
+                  {positionTitle(position)}
                 </p>
                 <p class="mt-1 text-caption text-subtle">
-                  {position.assetType.toUpperCase()} · {position.currency} ·
-                  {formatNumber(position.quantity ?? 0)} 單位
+                  {position.assetType === "option"
+                    ? `${position.quantity == null ? "數量未知" : `${formatNumber(position.quantity)} 口`} · 乘數 ${position.contractMultiplier ?? 1}`
+                    : `${position.quantity == null ? "數量未知" : `${formatNumber(position.quantity)} 單位`}`}
+                  · {position.currency} · {position.asOfDate}
                 </p>
               </div>
               <p class="text-right text-sm font-medium tabular-nums text-steel">
-                {formatCurrency(
-                  (position.marketValue ?? 0) + (position.cashBalance ?? 0),
-                  position.currency,
-                )}
+                {investmentPositionValue(position) == null
+                  ? "估值未知"
+                  : formatCurrency(
+                      investmentPositionValue(position)!,
+                      position.currency,
+                    )}
               </p>
             </div>
           {/each}

@@ -19,6 +19,7 @@ export const queryKeys = {
   invoiceTransactionMappings: ["invoice-transaction-mappings"] as const,
   manualAssets: ["manualAssets"] as const,
   liabilities: ["liabilities"] as const,
+  collateralRelationships: ["collateralRelationships"] as const,
   exchangeRates: ["exchange-rates"] as const,
   netWorthHistory: ["netWorthHistory"] as const,
   syncJobs: ["sync-jobs"] as const,

@@ -28,7 +28,6 @@
     formatDate,
     todayStr,
   } from "@/shared/format/financial";
-  import Liabilities from "./components/Liabilities.svelte";
 
   let {
     api,
@@ -85,6 +84,15 @@
     ($assets.data ?? []).reduce(
       (sum, asset) => sum + toTwd(asset.value ?? 0, asset.currency),
       0,
+    ),
+  );
+  const totalIncomplete = $derived(
+    ($assets.data ?? []).some(
+      (asset) =>
+        asset.value == null ||
+        (asset.currency !== "TWD" &&
+          rateValues[asset.currency] == null &&
+          asset.value !== 0),
     ),
   );
 
@@ -317,7 +325,7 @@
           <p
             class={`mt-1 font-semibold tracking-tight tabular-nums ${variant === "embedded" ? "text-xl" : "text-3xl"}`}
           >
-            {formatCurrency(total)}
+            {totalIncomplete ? "資料不完整" : formatCurrency(total)}
           </p>
         </div>
         <div class="flex flex-wrap gap-2">
@@ -374,7 +382,9 @@
                       </small>
                     </span>
                     <strong class="text-sm font-medium tabular-nums">
-                      {formatCurrency(asset.value ?? 0, asset.currency)}
+                      {asset.value == null
+                        ? "估值未知"
+                        : formatCurrency(asset.value, asset.currency)}
                     </strong>
                     <ChevronRight
                       class={`size-4 text-subtle transition ${expandedAssetId === asset.id ? "rotate-90" : ""}`}
@@ -613,4 +623,3 @@
       </div>{/if}
   </div>
 {/if}
-<Liabilities {api} />

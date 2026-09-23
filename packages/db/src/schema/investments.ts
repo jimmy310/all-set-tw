@@ -68,6 +68,17 @@ export const investmentPositions = sqliteTable(
     averageCost: real("average_cost"),
     costBasis: integer("cost_basis"),
     valuationSource: text("valuation_source").notNull().default("source"),
+    underlyingSymbol: text("underlying_symbol"),
+    expirationDate: text("expiration_date"),
+    strikePrice: real("strike_price"),
+    optionRight: text("option_right"),
+    contractMultiplier: real("contract_multiplier").notNull().default(1),
+    contractSymbol: text("contract_symbol"),
+    optionMarkPrice: real("option_mark_price"),
+    economicSecurityId: text("economic_security_id"),
+    observationCoverage: text("observation_coverage")
+      .notNull()
+      .default("complete"),
   },
   (table) => [
     primaryKey({ columns: [table.id] }),
@@ -92,6 +103,10 @@ export const investmentPositions = sqliteTable(
       table.investmentAccountId,
       sql`as_of_date DESC`,
     ),
+    index("idx_investment_positions_economic_security").on(
+      table.economicSecurityId,
+      sql`as_of_date DESC`,
+    ),
     unique().on(table.connectorId, table.sourceId, table.asOfDate),
     check(
       "investment_positions_check_1",
@@ -101,6 +116,15 @@ export const investmentPositions = sqliteTable(
       "investment_positions_check_2",
       sql`custody_status IN ('free', 'collateral', 'margin', 'restricted')`,
     ),
+    check(
+      "investment_positions_check_3",
+      sql`option_right IS NULL OR option_right IN ('call', 'put')`,
+    ),
+    check(
+      "investment_positions_check_4",
+      sql`observation_coverage IN ('complete', 'subset')`,
+    ),
+    check("investment_positions_check_5", sql`contract_multiplier > 0`),
   ],
 );
 
@@ -134,6 +158,12 @@ export const investmentTransactions = sqliteTable(
       sql`COALESCE(trade_date, posted_date, '')`,
       { mode: "virtual" },
     ),
+    underlyingSymbol: text("underlying_symbol"),
+    expirationDate: text("expiration_date"),
+    strikePrice: real("strike_price"),
+    optionRight: text("option_right"),
+    contractSymbol: text("contract_symbol"),
+    externalContractId: text("external_contract_id"),
   },
   (table) => [
     primaryKey({ columns: [table.id] }),
@@ -147,7 +177,11 @@ export const investmentTransactions = sqliteTable(
     unique().on(table.connectorId, table.accountId, table.sourceId),
     check(
       "investment_transactions_check_1",
-      sql`asset_type IN ('stock', 'etf', 'fund', 'bond', 'unknown')`,
+      sql`asset_type IN ('stock', 'etf', 'fund', 'bond', 'option', 'cash', 'future', 'crypto', 'other', 'unknown')`,
+    ),
+    check(
+      "investment_transactions_check_2",
+      sql`option_right IS NULL OR option_right IN ('call', 'put')`,
     ),
   ],
 );

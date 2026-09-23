@@ -52,3 +52,12 @@ export interface LiabilityRow {
   accruedInterest: number | null;
   asOfAt: string | null;
 }
+
+export interface CollateralRelationshipRow {
+  id: string;
+  liabilityAccountId: string;
+  assetType: "investment_position" | "manual_asset" | "bank_account" | "other";
+  assetId: string;
+  collateralValue: number | null;
+  currency: string;
+}
