@@ -390,9 +390,16 @@ describe("personal balance-sheet migration", () => {
           ('manual-position:legacy', 'manual', 'manual-position:legacy', 'stock',
            '2330', 3000, 300000, 'TWD', '2026-09-22', 'user:2330', 'subset',
            '2026-09-22', '2026-09-22'),
-          ('tdcc-position:legacy', 'tdcc', 'account:2330:2026-09-22', 'stock',
+          ('tdcc-position:legacy', 'tdcc', '007:1234567:2330:2026-09-22', 'stock',
            '2330', 5000, 500000, 'TWD', '2026-09-22', 'source:2330', 'complete',
-           '2026-09-22', '2026-09-22');
+           '2026-09-22', '2026-09-22'),
+          ('tdcc-position:colon-rich', 'tdcc',
+           'broker:branch:account:2330:2026-09-22', 'stock', '2330', 2000,
+           200000, 'TWD', '2026-09-22', NULL, 'complete', '2026-09-22',
+           '2026-09-22'),
+          ('tdcc-position:non-match', 'tdcc', 'some-unexpected-legacy-id',
+           'stock', '2330', 1000, 100000, 'TWD', '2026-09-22', NULL,
+           'complete', '2026-09-22', '2026-09-22');
       `);
       applyMigrationsAfter(
         database,
@@ -402,22 +409,38 @@ describe("personal balance-sheet migration", () => {
       expect(
         database
           .prepare(
-            `SELECT connector_id, source_position_key, economic_security_id,
-                    observation_coverage
+            `SELECT connector_id, source_id, source_position_key,
+                    economic_security_id, observation_coverage
              FROM investment_positions ORDER BY id`,
           )
           .all(),
       ).toEqual([
         {
           connector_id: "manual",
+          source_id: "manual-position:legacy",
           source_position_key: "manual-position:legacy",
           economic_security_id: "user:2330",
           observation_coverage: "subset",
         },
         {
           connector_id: "tdcc",
-          source_position_key: null,
+          source_id: "broker:branch:account:2330:2026-09-22",
+          source_position_key: "broker:branch:account:2330",
+          economic_security_id: null,
+          observation_coverage: "complete",
+        },
+        {
+          connector_id: "tdcc",
+          source_id: "007:1234567:2330:2026-09-22",
+          source_position_key: "007:1234567:2330",
           economic_security_id: "source:2330",
+          observation_coverage: "complete",
+        },
+        {
+          connector_id: "tdcc",
+          source_id: "some-unexpected-legacy-id",
+          source_position_key: null,
+          economic_security_id: null,
           observation_coverage: "complete",
         },
       ]);
@@ -437,6 +460,48 @@ describe("personal balance-sheet migration", () => {
           observation_coverage: "subset",
         },
       ]);
+
+      // Existing TDCC positions can be linked immediately after migration,
+      // without waiting for a new connector sync.
+      database
+        .prepare(
+          `INSERT INTO investment_reconciliation_overrides
+             (connector_id, source_position_key, economic_security_id,
+              observation_coverage, created_at, updated_at)
+           SELECT connector_id, source_position_key, 'user:economic-2330',
+                  'subset', created_at, updated_at
+           FROM investment_positions WHERE id = 'tdcc-position:legacy'`,
+        )
+        .run();
+      expect(
+        database
+          .prepare(
+            `SELECT source_id, economic_security_id, observation_coverage
+             FROM investment_positions WHERE id = 'tdcc-position:legacy'`,
+          )
+          .get(),
+      ).toEqual({
+        source_id: "007:1234567:2330:2026-09-22",
+        economic_security_id: "source:2330",
+        observation_coverage: "complete",
+      });
+      expect(
+        database
+          .prepare(
+            `SELECT connector_id, source_position_key, economic_security_id,
+                    observation_coverage
+             FROM investment_reconciliation_overrides
+             WHERE connector_id = 'tdcc'`,
+          )
+          .all(),
+      ).toEqual([
+        {
+          connector_id: "tdcc",
+          source_position_key: "007:1234567:2330",
+          economic_security_id: "user:economic-2330",
+          observation_coverage: "subset",
+        },
+      ]);
     } finally {
       database.close();
     }
@@ -447,6 +512,14 @@ describe("personal balance-sheet migration", () => {
     try {
       applyMigrationsThrough(database, "0047_sync_activity_details.sql");
       insertLegacyInvestmentRows(database, "full-chain");
+      database.exec(`
+        INSERT INTO investment_positions
+          (id, connector_id, source_id, asset_type, name, quantity, market_value,
+           currency, as_of_date, created_at, updated_at)
+        VALUES ('position-tdcc-backfill', 'tdcc',
+          'broker:branch:account:2330:2026-08-01', 'stock', '2330', 10, 1000,
+          'TWD', '2026-08-01', '2026-08-01', '2026-08-01');
+      `);
       applyMigrationsAfter(
         database,
         "0047_sync_activity_details.sql",
@@ -467,6 +540,17 @@ describe("personal balance-sheet migration", () => {
         marketValue: 300,
         transactionSource: "trade-source-full-chain",
         amount: 300,
+      });
+      expect(
+        database
+          .prepare(
+            `SELECT source_id, source_position_key
+             FROM investment_positions WHERE id = 'position-tdcc-backfill'`,
+          )
+          .get(),
+      ).toEqual({
+        source_id: "broker:branch:account:2330:2026-08-01",
+        source_position_key: "broker:branch:account:2330",
       });
       expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
     } finally {

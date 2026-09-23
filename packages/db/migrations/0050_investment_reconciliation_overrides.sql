@@ -6,6 +6,22 @@ UPDATE investment_positions
 SET source_position_key = source_id
 WHERE connector_id = 'manual';
 
+-- Earlier TDCC source IDs appended the exact snapshot date to the stable
+-- account/instrument identity. Remove only that proven trailing suffix.
+UPDATE investment_positions
+SET source_position_key = substr(
+  source_id,
+  1,
+  length(source_id) - length(':' || as_of_date)
+)
+WHERE connector_id = 'tdcc'
+  AND source_position_key IS NULL
+  AND length(source_id) > length(':' || as_of_date)
+  AND substr(
+    source_id,
+    length(source_id) - length(':' || as_of_date) + 1
+  ) = ':' || as_of_date;
+
 CREATE TABLE investment_reconciliation_overrides (
   connector_id TEXT NOT NULL,
   source_position_key TEXT NOT NULL,

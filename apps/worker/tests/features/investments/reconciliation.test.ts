@@ -61,7 +61,9 @@ describe("investment reconciliation overrides", () => {
     await position({
       id: "position:tdcc:2330",
       connectorId: "tdcc",
-      sourcePositionKey: "acct-a:2330",
+      // This is the source key that migration 0050 derives from an existing
+      // TDCC source ID ending in :2026-09-23.
+      sourcePositionKey: "007:1234567:2330",
       sourceEconomicSecurityId: "source:tdcc:2330",
       sourceObservationCoverage: "complete",
     });
