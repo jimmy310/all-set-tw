@@ -24,6 +24,10 @@ import {
   type SyncWriteRecord,
 } from "../../../src/features/sync/persistence";
 import {
+  getInvestmentPage,
+  linkPositionReconciliation,
+} from "../../../src/features/investments/service";
+import {
   linkCanonicalBankAccountsStatement,
   reconcileEsunLifecycleShadowStatements,
   reconcileEsunSingleCardSummaryAccountStatements,
@@ -261,6 +265,7 @@ describe("staged sync persistence", () => {
       "tdcc",
       {
         sourceId: "option-position-1",
+        sourcePositionKey: "broker-account-1:TSM281215C00280000",
         investmentAccountId: "broker-account-1",
         assetType: "option",
         symbol: "TSM281215C00280000",
@@ -307,7 +312,8 @@ describe("staged sync persistence", () => {
     expect(
       db.database
         .prepare(
-          `SELECT investment_account_id AS investmentAccountId,
+          `SELECT source_position_key AS sourcePositionKey,
+                  investment_account_id AS investmentAccountId,
                   underlying_symbol AS underlyingSymbol,
                   expiration_date AS expirationDate,
                   strike_price AS strikePrice,
@@ -321,6 +327,7 @@ describe("staged sync persistence", () => {
         )
         .get(),
     ).toEqual({
+      sourcePositionKey: "broker-account-1:TSM281215C00280000",
       investmentAccountId: "broker-account-1",
       underlyingSymbol: "TSM",
       expirationDate: "2028-12-15",
@@ -352,6 +359,90 @@ describe("staged sync persistence", () => {
       contractSymbol: "TSM281215C00280000",
       externalContractId: "broker-contract-1",
     });
+  });
+
+  it("keeps connector reconciliation overrides across a newly promoted snapshot", async () => {
+    const db = createDb();
+    const now = "2026-09-23T00:00:00.000Z";
+    const first = investmentPositionRecord(
+      "tdcc",
+      {
+        sourceId: "acct-1:2330:2026-09-22",
+        sourcePositionKey: "acct-1:2330",
+        assetType: "stock",
+        symbol: "2330",
+        name: "TSMC",
+        quantity: 3000,
+        marketValue: 3_000_000,
+        currency: "TWD",
+        asOfDate: "2026-09-22",
+        economicSecurityId: "provider:source-group",
+        observationCoverage: "complete",
+      },
+      now,
+    );
+    await persistStagedSyncWrite(db as unknown as D1Database, {
+      records: [first],
+    });
+    const firstId = String(first.payload.id);
+    expect(
+      await linkPositionReconciliation(db as unknown as D1Database, firstId, {
+        economicSecurityId: "user:economic-2330",
+        observationCoverage: "subset",
+      }),
+    ).toBe(true);
+
+    const second = investmentPositionRecord(
+      "tdcc",
+      {
+        sourceId: "acct-1:2330:2026-09-23",
+        sourcePositionKey: "acct-1:2330",
+        assetType: "stock",
+        symbol: "2330",
+        name: "TSMC",
+        quantity: 3500,
+        marketValue: 3_500_000,
+        currency: "TWD",
+        asOfDate: "2026-09-23",
+        economicSecurityId: "provider:source-group",
+        observationCoverage: "complete",
+      },
+      now,
+    );
+    await persistStagedSyncWrite(db as unknown as D1Database, {
+      records: [second],
+    });
+
+    const page = await getInvestmentPage(db as unknown as D1Database, 20);
+    expect(page.positions).toHaveLength(1);
+    expect(page.positions[0]).toMatchObject({
+      id: second.payload.id,
+      economicSecurityId: "user:economic-2330",
+      observationCoverage: "subset",
+      sourceEconomicSecurityId: "provider:source-group",
+      sourceObservationCoverage: "complete",
+      hasReconciliationOverride: true,
+    });
+    expect(page.positions[0]).not.toHaveProperty("sourceId");
+    expect("sourcePositionKey" in page.positions[0]!).toBe(false);
+    expect(
+      db.database
+        .prepare(
+          `SELECT economic_security_id, observation_coverage
+           FROM investment_positions WHERE id = ?`,
+        )
+        .get(String(second.payload.id)),
+    ).toEqual({
+      economic_security_id: "provider:source-group",
+      observation_coverage: "complete",
+    });
+    expect(
+      db.database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM investment_reconciliation_overrides",
+        )
+        .get(),
+    ).toEqual({ count: 1 });
   });
 
   it("seeds a disabled CTBC all-scope sync job", () => {

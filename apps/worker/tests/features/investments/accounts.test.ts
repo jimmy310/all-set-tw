@@ -23,6 +23,9 @@ describe("manual investment accounts and positions", () => {
   }, 60_000);
   afterAll(async () => harness?.mf.dispose());
   beforeEach(async () => {
+    await harness.binding.exec(
+      "DELETE FROM investment_reconciliation_overrides",
+    );
     await harness.binding.exec("DELETE FROM investment_positions");
     await harness.binding.exec("DELETE FROM investment_accounts");
   });

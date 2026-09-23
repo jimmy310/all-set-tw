@@ -8,10 +8,10 @@
 
 ## 目錄
 
-- Tables：35
-- Explicit indexes：50
+- Tables：36
+- Explicit indexes：52
 - Other objects：0
-- Migrations：47
+- Migrations：48
 
 ## Tables
 
@@ -31,7 +31,8 @@
 | [`einvoice_sync_runs`](#einvoice_sync_runs) | 電子發票跨 Queue invocation 執行的持久化同步記錄。 | 21 | 2 | 2 |
 | [`exchange_rates`](#exchange_rates) | 將外幣換算為新台幣時使用的最新匯率。 | 3 | 0 | 0 |
 | [`investment_accounts`](#investment_accounts) | 券商、複委託或證券融資等投資帳戶識別。 | 11 | 0 | 1 |
-| [`investment_positions`](#investment_positions) | 投資帳戶在特定日期的持倉與資產市值快照。 | 28 | 1 | 6 |
+| [`investment_positions`](#investment_positions) | 投資帳戶在特定日期的持倉與資產市值快照。 | 29 | 1 | 7 |
+| [`investment_reconciliation_overrides`](#investment_reconciliation_overrides) | 使用者對投資來源持倉指定的經濟持倉與觀測範圍覆寫。 | 6 | 0 | 1 |
 | [`investment_transactions`](#investment_transactions) | 投資帳戶的買賣、配息或其他證券交易明細。 | 28 | 0 | 3 |
 | [`invoice_line_items`](#invoice_line_items) | 電子發票底下的商品或服務明細。 | 13 | 1 | 2 |
 | [`invoice_transaction_preferences`](#invoice_transaction_preferences) | 使用者對電子發票與銀行交易是否關聯的決策。 | 5 | 2 | 2 |
@@ -795,7 +796,7 @@ CREATE TABLE investment_accounts (
 ### `investment_positions`
 
 > 用途：投資帳戶在特定日期的持倉與資產市值快照。
-> 注意：手動投資帳戶各自依帳戶與資產類別選最新快照；舊 connector 資料維持 connector 範圍。跨來源只以明確 economic_security_id 合併，不依 symbol 猜測。
+> 注意：來源部位事實與使用者 reconciliation overrides 分開保存。source_position_key 是不含快照日期的來源部位穩定識別；經濟持倉只以有效 economic_security_id 合併，不依 symbol 猜測。
 
 #### Columns
 
@@ -829,6 +830,7 @@ CREATE TABLE investment_accounts (
 | 26 | `option_mark_price` | 來源或手動輸入的每單位選擇權標記價格。 | REAL | YES | — | — | — |
 | 27 | `economic_security_id` | 使用者明確指定的跨來源經濟標的識別碼；不由股票代號推測。 | TEXT | YES | — | — | — |
 | 28 | `observation_coverage` | 完整持倉或部分／保管觀測；同一明確識別碼下完整觀測優先。 | TEXT | NO | 'complete' | — | — |
+| 29 | `source_position_key` | 來源端穩定持倉識別，不含快照日期；用於跨快照關聯使用者 reconciliation override。 | TEXT | YES | — | — | — |
 
 #### Foreign keys
 
@@ -840,6 +842,7 @@ CREATE TABLE investment_accounts (
 
 | Index | Unique | Partial | 欄位 | 定義 |
 | --- | :---: | :---: | --- | --- |
+| `idx_investment_positions_source_position_key` | 否 | 否 | `connector_id`, `source_position_key`, `as_of_date` | `CREATE INDEX idx_investment_positions_source_position_key<br>  ON investment_positions (connector_id, source_position_key, as_of_date DESC)` |
 | `idx_investment_positions_economic_security` | 否 | 否 | `economic_security_id`, `as_of_date` | `CREATE INDEX idx_investment_positions_economic_security ON investment_positions (economic_security_id, as_of_date DESC)` |
 | `idx_investment_positions_account_date` | 否 | 否 | `investment_account_id`, `as_of_date` | `CREATE INDEX idx_investment_positions_account_date ON investment_positions (investment_account_id, as_of_date DESC)` |
 | `idx_investment_positions_as_of_date` | 否 | 否 | `as_of_date` | `CREATE INDEX idx_investment_positions_as_of_date ON investment_positions (as_of_date)` |
@@ -869,8 +872,48 @@ CREATE TABLE "investment_positions" (
   custody_status TEXT NOT NULL DEFAULT 'free' CHECK (custody_status IN ('free', 'collateral', 'margin', 'restricted')),
   average_cost REAL,
   cost_basis INTEGER,
-  valuation_source TEXT NOT NULL DEFAULT 'source', underlying_symbol TEXT, expiration_date TEXT, strike_price REAL, option_right TEXT CHECK (option_right IS NULL OR option_right IN ('call', 'put')), contract_multiplier REAL NOT NULL DEFAULT 1 CHECK (contract_multiplier > 0), contract_symbol TEXT, option_mark_price REAL, economic_security_id TEXT, observation_coverage TEXT NOT NULL DEFAULT 'complete' CHECK (observation_coverage IN ('complete', 'subset')),
+  valuation_source TEXT NOT NULL DEFAULT 'source', underlying_symbol TEXT, expiration_date TEXT, strike_price REAL, option_right TEXT CHECK (option_right IS NULL OR option_right IN ('call', 'put')), contract_multiplier REAL NOT NULL DEFAULT 1 CHECK (contract_multiplier > 0), contract_symbol TEXT, option_mark_price REAL, economic_security_id TEXT, observation_coverage TEXT NOT NULL DEFAULT 'complete' CHECK (observation_coverage IN ('complete', 'subset')), source_position_key TEXT,
   UNIQUE (connector_id, source_id, as_of_date)
+)
+```
+
+### `investment_reconciliation_overrides`
+
+> 用途：使用者對投資來源持倉指定的經濟持倉與觀測範圍覆寫。
+> 注意：以 connector_id 與 source_position_key 跨快照識別來源持倉，不修改 connector-owned investment_positions；使用者覆寫優先於來源提供的 economic_security_id 與 observation_coverage。
+
+#### Columns
+
+| 順序 | 欄位 | 意義 | SQLite type | 可為 NULL | 預設值 | PK 順序 | Generated |
+| ---: | --- | --- | --- | :---: | --- | ---: | --- |
+| 1 | `connector_id` | 持倉所屬來源 connector 識別碼。 | TEXT | NO | — | 1 | — |
+| 2 | `source_position_key` | 來源提供的穩定持倉識別，不含快照日期。 | TEXT | NO | — | 2 | — |
+| 3 | `economic_security_id` | 使用者明確設定的經濟持倉群組識別。 | TEXT | NO | — | — | — |
+| 4 | `observation_coverage` | 此來源對經濟持倉的觀測是 complete 或 subset。 | TEXT | NO | — | — | — |
+| 5 | `created_at` | 覆寫建立時間。 | TEXT | NO | — | — | — |
+| 6 | `updated_at` | 覆寫最後更新時間。 | TEXT | NO | — | — | — |
+
+#### Foreign keys
+
+—
+
+#### Indexes
+
+| Index | Unique | Partial | 欄位 | 定義 |
+| --- | :---: | :---: | --- | --- |
+| `idx_investment_reconciliation_overrides_economic_security` | 否 | 否 | `economic_security_id` | `CREATE INDEX idx_investment_reconciliation_overrides_economic_security<br>  ON investment_reconciliation_overrides (economic_security_id)` |
+
+#### DDL
+
+```sql
+CREATE TABLE investment_reconciliation_overrides (
+  connector_id TEXT NOT NULL,
+  source_position_key TEXT NOT NULL,
+  economic_security_id TEXT NOT NULL,
+  observation_coverage TEXT NOT NULL CHECK (observation_coverage IN ('complete', 'subset')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (connector_id, source_position_key)
 )
 ```
 
@@ -1926,6 +1969,7 @@ Migration 是 schema 演進的 source of truth；若要了解某欄位的變更�
 - [`0047_sync_activity_details.sql`](../packages/db/migrations/0047_sync_activity_details.sql)
 - [`0048_personal_balance_sheet.sql`](../packages/db/migrations/0048_personal_balance_sheet.sql)
 - [`0049_balance_sheet_repair_options_and_observations.sql`](../packages/db/migrations/0049_balance_sheet_repair_options_and_observations.sql)
+- [`0050_investment_reconciliation_overrides.sql`](../packages/db/migrations/0050_investment_reconciliation_overrides.sql)
 
 ## 程式碼導覽
 

@@ -54,6 +54,11 @@
   let reconciliationPositionId = $state("");
   let economicSecurityId = $state("");
   let observationCoverage = $state("complete");
+  const reconciliationPosition = $derived(
+    ($positions.data ?? []).find(
+      (position) => position.id === reconciliationPositionId,
+    ),
+  );
 
   const addAccount = createMutation<{ id: string } | { success: boolean }>({
     mutationFn: () =>
@@ -167,12 +172,36 @@
     },
   });
   const linkReconciliation = createMutation({
-    mutationFn: () =>
-      api.put(`/api/investments/${reconciliationPositionId}/reconciliation`, {
-        economicSecurityId: economicSecurityId.trim() || null,
-        observationCoverage,
-      }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.investments }),
+    mutationFn: () => {
+      if (!economicSecurityId.trim())
+        throw new Error("請輸入經濟標的識別碼，或使用解除連結。");
+      return api.put(
+        `/api/investments/${reconciliationPositionId}/reconciliation`,
+        {
+          economicSecurityId: economicSecurityId.trim(),
+          observationCoverage,
+        },
+      );
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.investments });
+      error = "";
+    },
+    onError: (cause) => {
+      error = cause instanceof Error ? cause.message : "無法儲存來源連結。";
+    },
+  });
+  const unlinkReconciliation = createMutation({
+    mutationFn: (positionId: string) =>
+      api.delete(`/api/investments/${positionId}/reconciliation`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.investments });
+      economicSecurityId = "";
+      error = "";
+    },
+    onError: () => {
+      error = "目前來源沒有可解除的使用者連結。";
+    },
   });
   function editAccount(account: InvestmentAccountRow) {
     editingAccountId = account.id;
@@ -529,7 +558,11 @@
           value={position.id}
           >{position.symbol ?? position.name} · {position.connectorId ??
             position.investmentAccountId ??
-            "source"}</option
+            "source"}{position.hasReconciliationOverride
+            ? " · 已覆寫連結"
+            : position.economicSecurityId
+              ? " · 來源識別"
+              : ""}</option
         >{/each}
     </Select>
     <Input
@@ -545,11 +578,21 @@
     <Button
       type="submit"
       variant="secondary"
-      disabled={!reconciliationPositionId || $linkReconciliation.isPending}
-      >儲存連結</Button
+      disabled={!reconciliationPositionId ||
+        !economicSecurityId.trim() ||
+        $linkReconciliation.isPending}>儲存連結</Button
     >
+    {#if reconciliationPosition?.hasReconciliationOverride}
+      <Button
+        type="button"
+        variant="ghost"
+        disabled={$unlinkReconciliation.isPending}
+        onclick={() => $unlinkReconciliation.mutate(reconciliationPosition.id)}
+        >解除連結</Button
+      >
+    {/if}
     <p class="text-caption text-subtle sm:col-span-4">
-      只有相同手動識別的來源會合併；完整持倉優先，否則明確標記的部分觀測相加。股票代號相同不會自動合併。
+      只有明確連結至相同經濟標的的來源才會合併；完整持倉優先，否則明確標記的部分觀測相加。股票代號相同不會自動合併。
     </p>
   </form>
   {#if error}<p class="mt-3 text-sm text-coral" role="alert">{error}</p>{/if}

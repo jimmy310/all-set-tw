@@ -242,6 +242,7 @@ const ENTITY_CONFIG: Record<SyncEntityType, EntityConfig> = {
       "connector_id",
       "source_id",
       "asset_type",
+      "source_position_key",
       "investment_account_id",
       "symbol",
       "name",

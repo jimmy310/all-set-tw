@@ -1,7 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestD1 } from "../../../../../packages/db/testing/d1";
 import * as repository from "../../../src/features/investments/repository";
-import { setPositionReconciliation } from "../../../src/features/investments/repository";
+import {
+  getInvestmentPage,
+  linkPositionReconciliation,
+} from "../../../src/features/investments/service";
 
 const now = "2026-09-12T00:00:00.000Z";
 
@@ -16,6 +19,9 @@ describe("investment repository", () => {
   beforeEach(async () => {
     await harness.binding.batch([
       harness.binding.prepare("DELETE FROM investment_transactions"),
+      harness.binding.prepare(
+        "DELETE FROM investment_reconciliation_overrides",
+      ),
       harness.binding.prepare("DELETE FROM investment_positions"),
       harness.binding.prepare("DELETE FROM investment_accounts"),
     ]);
@@ -295,21 +301,23 @@ describe("investment repository", () => {
       name: "2330",
       asOfDate: "2026-09-23",
     });
-    await setPositionReconciliation(
-      harness.binding,
-      "linked-source",
-      "manual-economic-id:2330:account-a",
-      "subset",
-    );
-    const [row] = await repository.listLatestInvestmentPositions(
-      harness.binding,
-      10,
-    );
+    await harness.binding
+      .prepare(
+        "UPDATE investment_positions SET source_position_key = 'source-key:2330' WHERE id = 'linked-source'",
+      )
+      .run();
+    await linkPositionReconciliation(harness.binding, "linked-source", {
+      economicSecurityId: "manual-economic-id:2330:account-a",
+      observationCoverage: "subset",
+    });
+    const { positions } = await getInvestmentPage(harness.binding, 10);
+    const [row] = positions;
     expect(row).toMatchObject({
       economicSecurityId: "manual-economic-id:2330:account-a",
       observationCoverage: "subset",
-      sourceId: "source:2330",
       connectorId: "manual",
+      hasReconciliationOverride: true,
     });
+    expect(row).not.toHaveProperty("sourceId");
   });
 });

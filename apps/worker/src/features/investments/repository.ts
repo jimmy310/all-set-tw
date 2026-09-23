@@ -3,6 +3,7 @@ import {
   investmentPositions,
   investmentTransactions,
   investmentAccounts,
+  investmentReconciliationOverrides,
 } from "@taiwan-fin-hub/db";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import type { MonthDateRange } from "../../platform/month-range";
@@ -79,6 +80,7 @@ export async function listLatestInvestmentPositions(
       asOfDate: investmentPositions.asOfDate,
       connectorId: investmentPositions.connectorId,
       sourceId: investmentPositions.sourceId,
+      sourcePositionKey: investmentPositions.sourcePositionKey,
       investmentAccountId: investmentPositions.investmentAccountId,
       custodyStatus: investmentPositions.custodyStatus,
       averageCost: investmentPositions.averageCost,
@@ -326,20 +328,76 @@ export async function deleteManualInvestmentPosition(
 export async function setPositionReconciliation(
   db: D1Database,
   id: string,
-  economicSecurityId: string | null,
-  observationCoverage: string,
+  economicSecurityId: string,
+  observationCoverage: "complete" | "subset",
+  now: string,
 ) {
+  const position = await createDrizzle(db)
+    .select({
+      connectorId: investmentPositions.connectorId,
+      sourcePositionKey: investmentPositions.sourcePositionKey,
+    })
+    .from(investmentPositions)
+    .where(eq(investmentPositions.id, id))
+    .get();
+  if (!position?.sourcePositionKey) return false;
+  await createDrizzle(db)
+    .insert(investmentReconciliationOverrides)
+    .values({
+      connectorId: position.connectorId,
+      sourcePositionKey: position.sourcePositionKey,
+      economicSecurityId,
+      observationCoverage,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [
+        investmentReconciliationOverrides.connectorId,
+        investmentReconciliationOverrides.sourcePositionKey,
+      ],
+      set: { economicSecurityId, observationCoverage, updatedAt: now },
+    })
+    .run();
+  return true;
+}
+
+export async function removePositionReconciliation(db: D1Database, id: string) {
+  const position = await createDrizzle(db)
+    .select({
+      connectorId: investmentPositions.connectorId,
+      sourcePositionKey: investmentPositions.sourcePositionKey,
+    })
+    .from(investmentPositions)
+    .where(eq(investmentPositions.id, id))
+    .get();
+  if (!position?.sourcePositionKey) return false;
   const result = await createDrizzle(db)
-    .update(investmentPositions)
-    .set({ economicSecurityId, observationCoverage })
+    .delete(investmentReconciliationOverrides)
     .where(
       and(
-        eq(investmentPositions.id, id),
-        eq(investmentPositions.connectorId, "manual"),
+        eq(investmentReconciliationOverrides.connectorId, position.connectorId),
+        eq(
+          investmentReconciliationOverrides.sourcePositionKey,
+          position.sourcePositionKey,
+        ),
       ),
     )
     .run();
   return result.meta.changes > 0;
+}
+
+export function listInvestmentReconciliationOverrides(db: D1Database) {
+  return createDrizzle(db)
+    .select({
+      connectorId: investmentReconciliationOverrides.connectorId,
+      sourcePositionKey: investmentReconciliationOverrides.sourcePositionKey,
+      economicSecurityId: investmentReconciliationOverrides.economicSecurityId,
+      observationCoverage:
+        investmentReconciliationOverrides.observationCoverage,
+    })
+    .from(investmentReconciliationOverrides)
+    .all();
 }
 
 export async function createManualInvestmentAccount(
@@ -404,6 +462,7 @@ export async function createManualInvestmentPosition(
       id: input.id,
       connectorId: "manual",
       sourceId: input.id,
+      sourcePositionKey: input.id,
       investmentAccountId: input.accountId,
       assetType: input.assetType,
       symbol: input.symbol,

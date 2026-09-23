@@ -83,6 +83,8 @@ export interface InvestmentPosition {
   id: string;
   connectorId: string;
   sourceId: string;
+  /** Stable per-source instrument/custody identity, excluding snapshot date. */
+  sourcePositionKey?: string;
   assetType: AssetType;
   symbol?: string;
   name: string;

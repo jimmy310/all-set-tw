@@ -399,6 +399,9 @@ async function main() {
   assert.ok(
     result.records.some((r) => r.symbol === "FUND1" && r.assetType === "fund"),
   );
+  const tdccStock = result.records.find((record) => record.symbol === "2330");
+  assert.equal(tdccStock?.sourcePositionKey, "9A92:1234567:2330");
+  assert.notEqual(tdccStock?.sourcePositionKey, tdccStock?.sourceId);
   assert.equal(result.bankAccounts?.length, 1);
   assert.equal(
     result.bankAccounts?.[0]?.sourceId,

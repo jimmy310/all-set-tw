@@ -6,6 +6,8 @@ import {
   updateManualInvestmentPosition as updateManualInvestmentPositionRecord,
   deleteManualInvestmentPosition as deleteManualInvestmentPositionRecord,
   setPositionReconciliation as setPositionReconciliationRecord,
+  removePositionReconciliation as removePositionReconciliationRecord,
+  listInvestmentReconciliationOverrides,
   listInvestmentAccounts as listInvestmentAccountRecords,
   listInvestmentTransactions,
   listInvestmentTransactionsInRange,
@@ -65,8 +67,6 @@ export async function addManualInvestmentPosition(
     contractMultiplier?: number;
     contractSymbol?: string | null;
     optionMarkPrice?: number | null;
-    economicSecurityId?: string | null;
-    observationCoverage?: string;
   },
 ) {
   if (!(await hasManualInvestmentAccount(db, input.accountId))) return null;
@@ -99,8 +99,8 @@ export async function addManualInvestmentPosition(
     contractMultiplier,
     contractSymbol: isOption ? (input.contractSymbol ?? null) : null,
     optionMarkPrice: isOption ? (input.optionMarkPrice ?? null) : null,
-    economicSecurityId: input.economicSecurityId ?? null,
-    observationCoverage: input.observationCoverage ?? "complete",
+    economicSecurityId: null,
+    observationCoverage: "complete",
   });
   return id;
 }
@@ -163,8 +163,6 @@ export async function editManualInvestmentPosition(
     contractMultiplier,
     contractSymbol,
     optionMarkPrice,
-    economicSecurityId,
-    observationCoverage,
   } = input;
   const isCash = assetType === "cash";
   const isOption = assetType === "option";
@@ -198,8 +196,8 @@ export async function editManualInvestmentPosition(
       contractMultiplier: normalizedMultiplier,
       contractSymbol: isOption ? (contractSymbol ?? null) : null,
       optionMarkPrice: isOption ? (optionMarkPrice ?? null) : null,
-      economicSecurityId: economicSecurityId ?? null,
-      observationCoverage: observationCoverage ?? "complete",
+      economicSecurityId: null,
+      observationCoverage: "complete",
     },
     new Date().toISOString(),
   );
@@ -212,14 +210,63 @@ export function removeManualInvestmentPosition(db: D1Database, id: string) {
 export function linkPositionReconciliation(
   db: D1Database,
   id: string,
-  input: { economicSecurityId: string | null; observationCoverage: string },
+  input: {
+    economicSecurityId: string;
+    observationCoverage: "complete" | "subset";
+  },
 ) {
   return setPositionReconciliationRecord(
     db,
     id,
     input.economicSecurityId,
     input.observationCoverage,
+    new Date().toISOString(),
   );
+}
+
+export function unlinkPositionReconciliation(db: D1Database, id: string) {
+  return removePositionReconciliationRecord(db, id);
+}
+
+export function resolveInvestmentReconciliationOverrides<
+  T extends {
+    connectorId: string;
+    sourcePositionKey: string | null;
+    economicSecurityId: string | null;
+    observationCoverage: string;
+  },
+>(
+  positions: T[],
+  overrides: Array<{
+    connectorId: string;
+    sourcePositionKey: string;
+    economicSecurityId: string;
+    observationCoverage: string;
+  }>,
+) {
+  const bySource = new Map(
+    overrides.map((override) => [
+      `${override.connectorId}\u0000${override.sourcePositionKey}`,
+      override,
+    ]),
+  );
+  return positions.map((position) => {
+    const override = position.sourcePositionKey
+      ? bySource.get(
+          `${position.connectorId}\u0000${position.sourcePositionKey}`,
+        )
+      : undefined;
+    return {
+      ...position,
+      sourceEconomicSecurityId: position.economicSecurityId,
+      sourceObservationCoverage: position.observationCoverage,
+      economicSecurityId:
+        override?.economicSecurityId ?? position.economicSecurityId,
+      observationCoverage:
+        override?.observationCoverage ?? position.observationCoverage,
+      hasReconciliationOverride: override !== undefined,
+    };
+  });
 }
 
 export async function getInvestmentPage(
@@ -228,8 +275,19 @@ export async function getInvestmentPage(
   cursor?: InvestmentPageCursor,
 ) {
   const rows = await listLatestInvestmentPositions(db, limit + 1, cursor);
+  const overrides = await listInvestmentReconciliationOverrides(db);
   const hasMore = rows.length > limit;
-  const positions = rows.slice(0, limit);
+  const resolvedPositions = resolveInvestmentReconciliationOverrides(
+    rows.slice(0, limit),
+    overrides,
+  );
+  const positions = resolvedPositions.map(
+    ({
+      sourcePositionKey: _sourcePositionKey,
+      sourceId: _sourceId,
+      ...position
+    }) => position,
+  );
   return { hasMore, positions, last: positions.at(-1) };
 }
 

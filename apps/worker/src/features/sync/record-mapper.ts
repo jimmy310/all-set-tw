@@ -215,6 +215,7 @@ export function investmentPositionRecord(
       id,
       connector_id: connectorId,
       source_id: normalized.sourceId,
+      source_position_key: normalized.sourcePositionKey ?? null,
       asset_type: normalized.assetType,
       investment_account_id: normalized.investmentAccountId ?? null,
       symbol: normalized.symbol ?? null,

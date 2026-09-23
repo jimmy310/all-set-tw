@@ -23,6 +23,9 @@ export interface InvestmentRow {
   custodyStatus?: "free" | "collateral" | "margin" | "restricted";
   connectorId?: string;
   sourceId?: string;
+  hasReconciliationOverride?: boolean;
+  sourceEconomicSecurityId?: string | null;
+  sourceObservationCoverage?: "complete" | "subset";
   averageCost?: number | null;
   costBasis?: number | null;
   underlyingSymbol?: string | null;

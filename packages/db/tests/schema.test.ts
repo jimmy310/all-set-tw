@@ -260,7 +260,7 @@ describe("Drizzle schema parity", () => {
         }
       }
       const expected = inspect(migrated);
-      expect(expected).toHaveLength(35);
+      expect(expected).toHaveLength(36);
       expect(inspect(generated)).toEqual(expected);
       expect(generated.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
       // An unchanged schema must never produce an initialization migration.
@@ -374,15 +374,83 @@ describe("personal balance-sheet migration", () => {
     }
   });
 
-  it("preserves TDCC positions and trades across the explicit 0047→0048→0049 chain", () => {
+  it("0050 preserves source metadata and migrates legacy manual links into overrides", () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      applyMigrationsThrough(
+        database,
+        "0049_balance_sheet_repair_options_and_observations.sql",
+      );
+      database.exec(`
+        INSERT INTO investment_positions
+          (id, connector_id, source_id, asset_type, name, quantity, market_value,
+           currency, as_of_date, economic_security_id, observation_coverage,
+           created_at, updated_at)
+        VALUES
+          ('manual-position:legacy', 'manual', 'manual-position:legacy', 'stock',
+           '2330', 3000, 300000, 'TWD', '2026-09-22', 'user:2330', 'subset',
+           '2026-09-22', '2026-09-22'),
+          ('tdcc-position:legacy', 'tdcc', 'account:2330:2026-09-22', 'stock',
+           '2330', 5000, 500000, 'TWD', '2026-09-22', 'source:2330', 'complete',
+           '2026-09-22', '2026-09-22');
+      `);
+      applyMigrationsAfter(
+        database,
+        "0049_balance_sheet_repair_options_and_observations.sql",
+        "0050_investment_reconciliation_overrides.sql",
+      );
+      expect(
+        database
+          .prepare(
+            `SELECT connector_id, source_position_key, economic_security_id,
+                    observation_coverage
+             FROM investment_positions ORDER BY id`,
+          )
+          .all(),
+      ).toEqual([
+        {
+          connector_id: "manual",
+          source_position_key: "manual-position:legacy",
+          economic_security_id: "user:2330",
+          observation_coverage: "subset",
+        },
+        {
+          connector_id: "tdcc",
+          source_position_key: null,
+          economic_security_id: "source:2330",
+          observation_coverage: "complete",
+        },
+      ]);
+      expect(
+        database
+          .prepare(
+            `SELECT connector_id, source_position_key, economic_security_id,
+                    observation_coverage
+             FROM investment_reconciliation_overrides`,
+          )
+          .all(),
+      ).toEqual([
+        {
+          connector_id: "manual",
+          source_position_key: "manual-position:legacy",
+          economic_security_id: "user:2330",
+          observation_coverage: "subset",
+        },
+      ]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("preserves data across the explicit 0047→0048→0049→0050 chain", () => {
     const database = new DatabaseSync(":memory:");
     try {
       applyMigrationsThrough(database, "0047_sync_activity_details.sql");
       insertLegacyInvestmentRows(database, "full-chain");
       applyMigrationsAfter(
         database,
-        "0048_personal_balance_sheet.sql",
-        "0049_balance_sheet_repair_options_and_observations.sql",
+        "0047_sync_activity_details.sql",
+        "0050_investment_reconciliation_overrides.sql",
       );
       expect(
         database

@@ -472,6 +472,8 @@ apps/worker/src/features/sync/
 
 投資部位 mapper 與 staged promotion 會保留投資帳戶、選擇權合約欄位、`economicSecurityId` 及觀測涵蓋範圍；投資交易則保留選擇權合約識別欄位。一般 connector 不必提供這些選擇性欄位，既有 TDCC 結果可維持原格式。
 
+投資 reconciliation 的使用者覆寫獨立存於 `investment_reconciliation_overrides`，以 connector 與來源提供的穩定 `sourcePositionKey` 跨快照解析。Promotion 只更新來源持倉；effective reconciliation 依「使用者覆寫、來源 metadata、無連結」順序解析，避免新快照覆寫使用者決定。
+
 - `repository.ts`：同步流程使用的 query 與 prepared statement。
 - `schedule-route.ts`：排程設定 API。
 - `schedule-service.ts`：排程設定 use case。

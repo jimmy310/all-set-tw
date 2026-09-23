@@ -299,25 +299,23 @@
               </button>
             {/if}
 
-            {#if ($manual.data?.length ?? 0) > 0}
-              <button
-                class={`grid min-h-[68px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-ink/8 px-3 py-2 text-left transition hover:bg-ink/3 ${activeKey === "manual-assets" ? "bg-ink/4 shadow-[inset_3px_0_0_var(--color-steel)]" : ""}`}
-                type="button"
-                aria-pressed={activeKey === "manual-assets"}
-                onclick={() => (selectedKey = "manual-assets")}
-              >
-                <span class="min-w-0">
-                  <strong class="block text-sm">其他資產與負債</strong>
-                  <small class="mt-1 block text-caption text-subtle">
-                    {$manual.data?.length ?? 0} 筆資產 · {$liabilities.data
-                      ?.length ?? 0} 筆負債
-                  </small>
-                </span>
-                <strong class="text-sm tabular-nums text-moss">
-                  {formatCurrency(summary.manualTotal)}
-                </strong>
-              </button>
-            {/if}
+            <button
+              class={`grid min-h-[68px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-ink/8 px-3 py-2 text-left transition hover:bg-ink/3 ${activeKey === "manual-assets" ? "bg-ink/4 shadow-[inset_3px_0_0_var(--color-steel)]" : ""}`}
+              type="button"
+              aria-pressed={activeKey === "manual-assets"}
+              onclick={() => (selectedKey = "manual-assets")}
+            >
+              <span class="min-w-0">
+                <strong class="block text-sm">其他資產與負債</strong>
+                <small class="mt-1 block text-caption text-subtle">
+                  {$manual.data?.length ?? 0} 筆資產 · {$liabilities.data
+                    ?.length ?? 0} 筆負債
+                </small>
+              </span>
+              <strong class="text-sm tabular-nums text-moss">
+                {formatCurrency(summary.manualTotal)}
+              </strong>
+            </button>
           </div>
         </div>
 

@@ -229,6 +229,106 @@ test("uses the desktop asset ledger without losing detail workflows", async ({
   await expect(addAsset).toBeFocused();
 });
 
+test("keeps desktop liability management reachable without manual assets", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.route("**/api/manual-assets", async (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([]),
+    }),
+  );
+  await page.route("**/api/liabilities", async (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        {
+          id: "mortgage-1",
+          liabilityType: "mortgage",
+          provider: "銀行甲",
+          name: "主要住宅房貸",
+          maskedIdentity: null,
+          currency: "TWD",
+          originalPrincipal: 8_000_000,
+          interestRate: null,
+          interestRateType: "unknown",
+          startDate: null,
+          maturityDate: null,
+          monthlyPayment: null,
+          nextPaymentDate: null,
+          outstandingPrincipal: 6_000_000,
+          accruedInterest: null,
+          asOfAt: "2026-09-23T00:00:00.000Z",
+        },
+      ]),
+    }),
+  );
+
+  await page.goto("/#/assets");
+  const liabilityEntry = page.getByRole("button", {
+    name: /其他資產與負債/,
+  });
+  await expect(liabilityEntry.first()).toBeVisible();
+  await liabilityEntry.first().click();
+  await expect(
+    page.getByRole("heading", { name: "負債與貸款", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("listitem").filter({ hasText: "主要住宅房貸" }),
+  ).toBeVisible();
+});
+
+test("shows brokerage cash, option, and reconciliation controls in Investments", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/#/assets");
+  await page.getByRole("button", { name: /投資淨值/ }).click();
+
+  await page
+    .getByText("手動新增投資帳戶與持倉", { exact: true })
+    .filter({ visible: true })
+    .first()
+    .click();
+  const investmentDetails = page
+    .locator("details")
+    .filter({ hasText: "手動新增投資帳戶與持倉" })
+    .filter({ visible: true })
+    .filter({
+      has: page.getByRole("combobox", { name: "選擇來源持倉" }),
+    })
+    .last();
+  await expect(
+    investmentDetails.getByRole("combobox", { name: "選擇來源持倉" }),
+  ).toBeVisible();
+  await expect(
+    investmentDetails.getByRole("textbox", { name: "經濟標的識別" }),
+  ).toBeVisible();
+
+  const assetType = investmentDetails.getByRole("combobox", {
+    name: "資產種類",
+  });
+  await assetType.selectOption("cash");
+  await expect(
+    investmentDetails.getByRole("spinbutton", { name: "現金餘額" }),
+  ).toBeVisible();
+  await expect(
+    investmentDetails.getByRole("spinbutton", { name: "持有數量" }),
+  ).toHaveCount(0);
+
+  await assetType.selectOption("option");
+  await expect(
+    investmentDetails.getByRole("textbox", { name: "選擇權標的" }),
+  ).toBeVisible();
+  await expect(investmentDetails.getByLabel("到期日")).toBeVisible();
+  await expect(investmentDetails.getByLabel("履約價")).toBeVisible();
+  await expect(investmentDetails.getByLabel("合約乘數")).toBeVisible();
+  await expect(investmentDetails.getByLabel("選擇權合約代號")).toBeVisible();
+});
+
 test("keeps the mobile ledger readable and expandable", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/#/assets");

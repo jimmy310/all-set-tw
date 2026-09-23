@@ -79,6 +79,7 @@ export const investmentPositions = sqliteTable(
     observationCoverage: text("observation_coverage")
       .notNull()
       .default("complete"),
+    sourcePositionKey: text("source_position_key"),
   },
   (table) => [
     primaryKey({ columns: [table.id] }),
@@ -107,6 +108,11 @@ export const investmentPositions = sqliteTable(
       table.economicSecurityId,
       sql`as_of_date DESC`,
     ),
+    index("idx_investment_positions_source_position_key").on(
+      table.connectorId,
+      table.sourcePositionKey,
+      sql`as_of_date DESC`,
+    ),
     unique().on(table.connectorId, table.sourceId, table.asOfDate),
     check(
       "investment_positions_check_1",
@@ -125,6 +131,28 @@ export const investmentPositions = sqliteTable(
       sql`observation_coverage IN ('complete', 'subset')`,
     ),
     check("investment_positions_check_5", sql`contract_multiplier > 0`),
+  ],
+);
+
+export const investmentReconciliationOverrides = sqliteTable(
+  "investment_reconciliation_overrides",
+  {
+    connectorId: text("connector_id").notNull(),
+    sourcePositionKey: text("source_position_key").notNull(),
+    economicSecurityId: text("economic_security_id").notNull(),
+    observationCoverage: text("observation_coverage").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.connectorId, table.sourcePositionKey] }),
+    index("idx_investment_reconciliation_overrides_economic_security").on(
+      table.economicSecurityId,
+    ),
+    check(
+      "investment_reconciliation_overrides_check_1",
+      sql`observation_coverage IN ('complete', 'subset')`,
+    ),
   ],
 );
 

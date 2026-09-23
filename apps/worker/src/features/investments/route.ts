@@ -25,6 +25,7 @@ import {
   editManualInvestmentPosition,
   removeManualInvestmentPosition,
   linkPositionReconciliation,
+  unlinkPositionReconciliation,
 } from "./service";
 
 const investmentPageCursorSchema = z.object({
@@ -86,8 +87,6 @@ export const manualPositionSchema = z
     contractMultiplier: z.number().finite().positive().default(100),
     contractSymbol: z.string().trim().max(120).nullable().optional(),
     optionMarkPrice: z.number().finite().nonnegative().nullable().optional(),
-    economicSecurityId: z.string().trim().min(1).max(160).nullable().optional(),
-    observationCoverage: z.enum(["complete", "subset"]).default("complete"),
   })
   .superRefine((body, ctx) => {
     if (
@@ -251,7 +250,7 @@ function registerInvestmentRoutes(api: Hono<AppBindings>) {
     zValidator(
       "json",
       z.object({
-        economicSecurityId: z.string().trim().min(1).max(160).nullable(),
+        economicSecurityId: z.string().trim().min(1).max(160),
         observationCoverage: z.enum(["complete", "subset"]),
       }),
       validationHook("INVALID_REQUEST", "Position reconciliation is invalid."),
@@ -270,6 +269,21 @@ function registerInvestmentRoutes(api: Hono<AppBindings>) {
       return c.json({ success: true });
     },
   );
+  api.delete("/investments/:id/reconciliation", async (c) => {
+    const removed = await unlinkPositionReconciliation(
+      c.env.DB,
+      c.req.param("id"),
+    );
+    if (!removed)
+      return c.json(
+        {
+          success: false,
+          error: { code: "RECONCILIATION_OVERRIDE_NOT_FOUND" },
+        },
+        404,
+      );
+    return c.json({ success: true });
+  });
 
   api.get("/investments", async (c) => {
     const { limit, cursor } = parseKeysetPagination(
